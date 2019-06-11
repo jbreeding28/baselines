@@ -379,8 +379,8 @@ def configure(dir=None, format_strs=None, comm=None, log_suffix=''):
         dir = osp.join(tempfile.gettempdir(),
             datetime.datetime.now().strftime("openai-%Y-%m-%d-%H-%M-%S-%f"))
     assert isinstance(dir, str)
-    os.makedirs(dir, exist_ok=True)
-
+    dir = os.path.expanduser(dir)
+    os.makedirs(os.path.expanduser(dir), exist_ok=True)
     rank = get_rank_without_mpi_import()
     if rank > 0:
         log_suffix = log_suffix + "-rank%03i" % rank
@@ -392,7 +392,6 @@ def configure(dir=None, format_strs=None, comm=None, log_suffix=''):
             format_strs = os.getenv('OPENAI_LOG_FORMAT_MPI', 'log').split(',')
     format_strs = filter(None, format_strs)
     output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]
-
     Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, comm=comm)
     if output_formats:
         log('Logging to %s'%dir)

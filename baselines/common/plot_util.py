@@ -7,6 +7,7 @@ import pandas
 from collections import defaultdict, namedtuple
 from baselines.bench import monitor
 from baselines.logger import read_json, read_csv
+import time
 
 def smooth(y, radius, mode='two_sided', valid_only=False):
     '''
@@ -225,8 +226,8 @@ COLORS = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple'
 
 
 def default_xy_fn(r):
-    x = np.cumsum(r.monitor.l)
-    y = smooth(r.monitor.r, radius=10)
+    x = np.cumsum(r.progress.values[:,3])
+    y = smooth(r.progress.values[:,2], radius=10)
     return x,y
 
 def default_split_fn(r):
@@ -327,7 +328,6 @@ def plot_results(
     default_samples = 512
     if average_group:
         resample = resample or default_samples
-
     for (isplit, sk) in enumerate(sorted(sk2r.keys())):
         g2l = {}
         g2c = defaultdict(int)

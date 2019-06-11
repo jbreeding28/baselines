@@ -8,11 +8,13 @@ import tensorflow as tf
 import numpy as np
 import datetime
 import time
+import matplotlib.pyplot as plt
 
 from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
 from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
 from baselines.common.cmd_util import common_arg_parser, parse_unknown_args, make_vec_env, make_env
 from baselines.common.tf_util import get_session
+from baselines.common import plot_util as pu
 from baselines import logger
 from importlib import import_module
 
@@ -79,6 +81,7 @@ def train(args, extra_args):
         env=env,
         seed=seed,
         total_timesteps=total_timesteps,
+        print_freq=1,
         **alg_kwargs
     )
 
@@ -94,7 +97,9 @@ def build_env(args):
     play = args.play
 
     env_type, env_id = get_env_type(args)
-
+    logger_dir = None
+    if args.log_path is not None:
+        logger_dir = osp.expanduser(args.log_path)
     if env_type in {'atari', 'retro'}:
         if alg == 'deepq':
             # clip reward when training
@@ -199,6 +204,11 @@ def parse_cmdline_kwargs(args):
 
     return {k: parse(v) for k,v in parse_unknown_args(args).items()}
 
+def configure_logger(log_path, **kwargs):
+    if log_path is not None:
+        logger.configure(log_path)
+    else:
+        logger.configure(**kwargs)
 
 
 def main(args):
@@ -207,14 +217,12 @@ def main(args):
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
     extra_args = parse_cmdline_kwargs(unknown_args)
-
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
-        logger.configure()
+        configure_logger(args.log_path)
     else:
-        logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()
-
+        configure_logger(args.log_path, format_strs=[])
     model, env = train(args, extra_args)
 
     if args.save_path is not None and rank == 0:
@@ -281,7 +289,6 @@ def main(args):
                 break
 
     env.close()
-
     return model
 
 if __name__ == '__main__':
