@@ -81,7 +81,7 @@ def train(args, extra_args):
         env=env,
         seed=seed,
         total_timesteps=total_timesteps,
-        print_freq=1,
+        print_freq=10,
         **alg_kwargs
     )
 
@@ -278,10 +278,12 @@ def main(args):
                 # print('game score={}'.format(game_score))
                 if game_score > max_score:
                     max_score = game_score
-                game_score = 0
+                
                 game_count += 1
-                if game_count % 100 == 0:
-                    print('{} games completed'.format(game_count))
+                logger.record_tabular("game", game_count)
+                logger.record_tabular("score", game_score)
+                logger.dump_tabular()
+                game_score = 0
             if game_count == num_games:
                 print(" ")
                 print('average score={}'.format(float(total_score/num_games)))
