@@ -95,19 +95,20 @@ def build_env(args):
     alg = args.alg
     seed = args.seed
     play = args.play
-
     env_type, env_id = get_env_type(args)
-    logger_dir = None
-    if args.log_path is not None:
-        logger_dir = osp.expanduser(args.log_path)
     if env_type in {'atari', 'retro'}:
+        # this should be the only algorithm I'll use
         if alg == 'deepq':
+            # BEGIN MY CODE
             # clip reward when training
             # don't clip when playing to see actual score
             if play:
+                # if I'm playing to see how well the network scores, I want to unclip rewards
                 env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False})
             else:
+                # otherwise, keep the basic reward used by the base algorithm
                 env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True})
+            # END MY CODE
         elif alg == 'trpo_mpi':
             env = make_env(env_id, env_type, seed=seed)
         else:
@@ -228,67 +229,118 @@ def main(args):
     if args.save_path is not None and rank == 0:
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)
-
+    # play a number of games to evaluate the network
     if args.play:
         logger.log("Running trained model")
         obs = env.reset()
         state = model.initial_state if hasattr(model, 'initial_state') else None
         dones = np.zeros((1,))
+        # BEGIN MY CODE
+        # create a bunch of variables for holding various types of scores
+
+        # episode reward is left over from the original but isn't really used
         episode_rew = 0
+
+        # these variables hold the score of the current game and score across all games
         game_score = 0
         total_score = 0
+
+        # keep hold of the highest score, initialize to zero
         max_score = 0
+        # keep track of how many games are played
         game_count = 0
+
+        # get the number of games that are specified (default 10)
+        # dependent on the user to make sure the number is valid
         num_games = args.num_games
-        if num_games <= 1:
-            num_games = 1
+        # boolean variable which tells the program whether or not to render the game
         render = args.render or args.render_fast
+        # the default display time for one frame
+        # due to the stacking of frames, only every fourth frame is displayed
+        # and these games run at 60 fps
+        # each fourth frame is rendered over the three missing frames
         frame_time = float(4/60)
+        # Space Invaders stacks three frames instead of four
+        # this is due to flashing issues with the lasers
         if "SpaceInvaders" in args.env:
             frame_time = float(3/60)
+        # get the render speed (default 3)
         render_speed = args.render_speed
+        # constrain the speed to between 1x and 10x
         if render_speed <= 1:
             render_speed = 1
         elif render_speed >= 10:
             render_speed = 10
+        # calculate the appropriate frame speed
         frame_time = frame_time/render_speed
+        # while loop carried over from base code
+        # this will play games until so many have been played
         while True:
+            # each loop through, get the current time at the start
             start_time = datetime.datetime.now()
+            # get the appropriate action based on the observation of the environment
             if state is not None:
                 actions, _, state, _ = model.step(obs,S=state, M=dones)
             else:
                 actions, _, _, _ = model.step(obs)
+            # take a step forward in the environment, return new observation
+            # return any reward and if the player died
             obs, rew, done, _ = env.step(actions)
+            # get the number of lives remaining
             lives = env.getLives()
+            # add reward from previous step to overall score
             episode_rew += rew[0] if isinstance(env, VecEnv) else rew
+            # render the frame if the user wants it
             if render:
                 env.render()
             done = done.any() if isinstance(done, np.ndarray) else done
+            # done is true whenever a reset is necessary
+            # occurs on death or game over
             if done:
-                # print('episode_rew={}'.format(episode_rew))
+                # update scores with the amount scored this life
                 game_score += episode_rew
                 total_score += episode_rew
+                # reset for next go around
                 episode_rew = 0
+                # reset the environment
+
+                # on game over, this starts a new game
+                # otherwise, continues the game but returns player to initial position
                 obs = env.reset()
             # can make the games run at a given framerate
             if render and not args.render_fast:
+                # just wait until it's time to push a new frame
                 while (datetime.datetime.now() - start_time).total_seconds() < frame_time:
+                    # pass means just wait and do nothing
                     pass
+            # if there are no lives left, the game is over
+
+            # use number of lives to differentiate between losing a life and game over
             if lives == 0:
-                # print('game score={}'.format(game_score))
+                # update highest score
                 if game_score > max_score:
                     max_score = game_score
-                
+                # increment game counter
                 game_count += 1
+                # after the game is over, log the game number and score
+                # game number is just so the person running this understands where they are
+
+                # this method is based off of what I saw in the Deep Q code
+                # record the data to the logger
                 logger.record_tabular("game", game_count)
                 logger.record_tabular("score", game_score)
+                # then dump it to the log file and the terminal
                 logger.dump_tabular()
+                # game is over, reset the score
                 game_score = 0
+            # print out average and max score when number of games is finished
             if game_count == num_games:
                 print(" ")
                 print('average score={}'.format(float(total_score/num_games)))
                 print('max score={}'.format(max_score))
+                # break out of this true loop
                 break
+        # END MY CODE
 
     env.close()
     return model

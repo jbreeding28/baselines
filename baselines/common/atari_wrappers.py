@@ -271,7 +271,7 @@ def make_atari(env_id, max_episode_steps=None):
     env = NoopResetEnv(env, noop_max=30)
     # change the number of frame skips if the game is Space Invaders
     # reference [1] found that using a frame skip of 4 on Space Invaders is not good
-    # because of the frequency of the lasers makes them invisible
+    # because the frequency of the lasers makes them invisible
     if "SpaceInvaders" in env_id:
         env = MaxAndSkipEnv(env, skip=3)
     else:
@@ -294,6 +294,7 @@ def wrap_deepmind(env, env_id, episode_life=True, clip_rewards=True, frame_stack
         env = ClipRewardEnv(env)
     if frame_stack:
         # change frame stack to 3 for Space Invaders to fix laser problems
+        # otherwise use the default 4
         if "SpaceInvaders" in env_id:
             env = FrameStack(env, 3)
         else:
