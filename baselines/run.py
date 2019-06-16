@@ -107,7 +107,7 @@ def build_env(args):
                 env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False})
             else:
                 # otherwise, keep the basic reward used by the base algorithm
-                env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True})
+                env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False})
             # END MY CODE
         elif alg == 'trpo_mpi':
             env = make_env(env_id, env_type, seed=seed)
@@ -225,7 +225,6 @@ def main(args):
         rank = MPI.COMM_WORLD.Get_rank()
         configure_logger(args.log_path, format_strs=[])
     model, env = train(args, extra_args)
-
     if args.save_path is not None and rank == 0:
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)

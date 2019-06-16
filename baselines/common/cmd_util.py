@@ -171,9 +171,13 @@ def common_arg_parser():
     parser.add_argument('--save_video_interval', help='Save video every x steps (0 = disabled)', default=0, type=int)
     parser.add_argument('--save_video_length', help='Length of recorded video. Default: 200', default=200, type=int)
     parser.add_argument('--play', default=False, action='store_true')
+    # allow the program to render the game screen. False by default
     parser.add_argument('--render', default=False, action='store_true')
+    # determine the speed the game renders at. Default to 3 times normal
     parser.add_argument('--render_speed', default=3.0, type=float)
+    # render as fast as possible, overriding any speed parameter
     parser.add_argument('--render_fast', default=False, action='store_true')
+    # number of games for the agent to play
     parser.add_argument('--num_games', default=10, type=float)
     return parser
 
