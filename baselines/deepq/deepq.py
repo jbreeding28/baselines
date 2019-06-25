@@ -186,7 +186,6 @@ def learn(env,
         See header of baselines/deepq/categorical.py for details on the act function.
     """
     # Create all the functions necessary to train the model
-
     sess = get_session()
     set_global_seeds(seed)
 

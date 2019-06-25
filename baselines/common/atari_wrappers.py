@@ -97,7 +97,7 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs
 
 class MaxAndSkipEnv(gym.Wrapper):
-    def __init__(self, env, skip=4):
+    def __init__(self, env, mode, skip=4):
         """Return only every `skip`-th frame"""
         gym.Wrapper.__init__(self, env)
         # most recent raw observations (for max pooling across time steps)
@@ -265,17 +265,18 @@ class LazyFrames(object):
     def frame(self, i):
         return self._force()[..., i]
 
-def make_atari(env_id, max_episode_steps=None):
-    env = gym.make(env_id)
+def make_atari(env_id, env_kwargs, max_episode_steps=None):
+    mode = env_kwargs['game_mode']
+    env = gym.make(env_id, mode)
     assert 'NoFrameskip' in env.spec.id
     env = NoopResetEnv(env, noop_max=30)
     # change the number of frame skips if the game is Space Invaders
     # reference [1] found that using a frame skip of 4 on Space Invaders is not good
     # because the frequency of the lasers makes them invisible
     if "SpaceInvaders" in env_id:
-        env = MaxAndSkipEnv(env, skip=3)
+        env = MaxAndSkipEnv(env, mode, skip=3)
     else:
-        env = MaxAndSkipEnv(env, skip=4)
+        env = MaxAndSkipEnv(env, mode, skip=4)
     if max_episode_steps is not None:
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
     return env

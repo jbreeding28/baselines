@@ -95,6 +95,7 @@ def build_env(args):
     alg = args.alg
     seed = args.seed
     play = args.play
+    mode = args.mode
     env_type, env_id = get_env_type(args)
     if env_type in {'atari', 'retro'}:
         # this should be the only algorithm I'll use
@@ -102,12 +103,13 @@ def build_env(args):
             # BEGIN MY CODE
             # clip reward when training
             # don't clip when playing to see actual score
+            # add mode in as an environment parameter
             if play:
                 # if I'm playing to see how well the network scores, I want to unclip rewards
-                env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False})
+                env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False}, env_kwargs={'game_mode': mode})
             else:
                 # otherwise, keep the basic reward used by the base algorithm
-                env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False})
+                env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': True}, env_kwargs={'game_mode': mode})
             # END MY CODE
         elif alg == 'trpo_mpi':
             env = make_env(env_id, env_type, seed=seed)
@@ -272,6 +274,12 @@ def main(args):
             render_speed = 10
         # calculate the appropriate frame speed
         frame_time = frame_time/render_speed
+        # need special code to handle Pong
+        # create variable to keep track of whether or not I'm playing Pong
+        isPong = False
+        if "Pong" in args.env:
+            isPong = True
+
         # while loop carried over from base code
         # this will play games until so many have been played
         while True:
@@ -296,8 +304,12 @@ def main(args):
             # done is true whenever a reset is necessary
             # occurs on death or game over
             if done:
-                # update scores with the amount scored this life
-                game_score += episode_rew
+                # Pong only uses done on game over, so make the episode reward the game score
+                if isPong:
+                    game_score = episode_rew
+                # if it's not Pong, just do what I did before
+                else:
+                    game_score += episode_rew
                 total_score += episode_rew
                 # reset for next go around
                 episode_rew = 0
@@ -315,7 +327,9 @@ def main(args):
             # if there are no lives left, the game is over
 
             # use number of lives to differentiate between losing a life and game over
-            if lives == 0:
+            # Pong doesn't use lives, and doesn't return "done" until game over
+            # use the isPong variable to keep track of this
+            if (lives == 0 and not isPong) or (done and isPong):
                 # update highest score
                 if game_score > max_score:
                     max_score = game_score

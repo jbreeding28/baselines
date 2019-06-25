@@ -72,7 +72,7 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
         env_id = re.sub('.*:', '', env_id)
         importlib.import_module(module_name)
     if env_type == 'atari':
-        env = make_atari(env_id)
+        env = make_atari(env_id, env_kwargs)
     elif env_type == 'retro':
         import retro
         gamestate = gamestate or retro.State.DEFAULT
@@ -83,8 +83,11 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
     if flatten_dict_observations and isinstance(env.observation_space, gym.spaces.Dict):
         keys = env.observation_space.spaces.keys()
         env = gym.wrappers.FlattenDictWrapper(env, dict_keys=list(keys))
-
-    env.seed(seed + subrank if seed is not None else None)
+    if env_type == 'atari':
+        mode=env_kwargs['game_mode']
+        env.seed(mode, seed + subrank if seed is not None else None)
+    else:
+        env.seed(seed + subrank if seed is not None else None)
     env = Monitor(env,
                   logger_dir and os.path.join(logger_dir, str(mpi_rank) + '.' + str(subrank)),
                   allow_early_resets=True)
@@ -179,6 +182,8 @@ def common_arg_parser():
     parser.add_argument('--render_fast', default=False, action='store_true')
     # number of games for the agent to play
     parser.add_argument('--num_games', default=10, type=float)
+    # mode of the game
+    parser.add_argument('--mode', default=1, type=int)
     return parser
 
 def robotics_arg_parser():
