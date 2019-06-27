@@ -73,8 +73,8 @@ class ActWrapper(object):
         with open(path, "wb") as f:
             cloudpickle.dump((model_data, self._act_params), f)
 
-    def save(self, path, sess):
-        save_variables(path, sess)
+    def save(self, path, sess, scope):
+        save_variables(path, sess, scope)
 
 
 def load_act(path):
@@ -215,6 +215,7 @@ def learn(env,
     observation_space = env.observation_space
     def make_obs_ph(name):
         return ObservationInput(observation_space, name=name)
+
     # build everything for the first model
     # pass in the session and the "_1" suffix
     act_1, train_1, update_target_1, debug_1 = deepq.build_train(
@@ -226,7 +227,8 @@ def learn(env,
         optimizer=tf.train.AdamOptimizer(learning_rate=lr),
         gamma=gamma,
         grad_norm_clipping=10,
-        param_noise=param_noise
+        param_noise=param_noise,
+        scope="deepq_1"
     )
     # a lot of if multiplayer statements duplicating these actions for a second network
     # pass in session 2 and "_2" instead
@@ -240,7 +242,8 @@ def learn(env,
             optimizer=tf.train.AdamOptimizer(learning_rate=lr),
             gamma=gamma,
             grad_norm_clipping=10,
-            param_noise=param_noise
+            param_noise=param_noise,
+            scope="deepq_2"
         )
 
     # separate act_params for each wrapper
@@ -318,21 +321,21 @@ def learn(env,
         if tf.train.latest_checkpoint(td) is not None:
             if multiplayer:
                 # load both models if multiplayer is on
-                load_variables(model_file_1, sess_1)
+                load_variables(model_file_1, sess_1, "deepq_1")
                 logger.log('Loaded model 1 from {}'.format(model_file_1))
                 model_saved_1 = True
-                load_variables(model_file_2, sess_2)
+                load_variables(model_file_2, sess_2, "deepq_2")
                 logger.log('Loaded model 2 from {}'.format(model_file_2))
                 model_saved_2 = True
-            # otherwise just load hthe first one
+            # otherwise just load the first one
             else:
-                load_variables(model_file_1, sess_1)
+                load_variables(model_file_1, sess_1, "deepq_1")
                 logger.log('Loaded model from {}'.format(model_file_1))
                 model_saved_1 = True
         # I have separate load variables for single-player and multiplayer
         # this should be None if multiplayer is on
         elif load_path is not None:
-            load_variables(load_path, sess_1)
+            load_variables(load_path, sess_1, "deepq_1")
             logger.log('Loaded model from {}'.format(load_path))
         # load the separate models in for multiplayer
         # should load the variables into the appropriate sessions
@@ -340,9 +343,9 @@ def learn(env,
         # my format may restrict things to working properly only when a Player 1 model is loaded into session 1, and same for Player 2
         # however, in practice, the models won't work properly otherwise
         elif multiplayer and load_path_1 is not None and load_path_2 is not None:
-            load_variables(load_path_1, sess_1)
+            load_variables(load_path_1, sess_1, "deepq_1")
             logger.log('Loaded model 1 from {}'.format(load_path_1))
-            load_variables(load_path_2, sess_2)
+            load_variables(load_path_2, sess_2, "deepq_2")
             logger.log('Loaded model 2 from {}'.format(load_path_2))
 
         # actual training starts here
@@ -465,24 +468,24 @@ def learn(env,
                             logger.log("Saving model 1 due to mean reward increase: {} -> {}".format(saved_mean_reward_1, mean_100ep_reward_1))
                         else:
                             logger.log("Saving model due to mean reward increase: {} -> {}".format(saved_mean_reward_1, mean_100ep_reward_1))
-                    save_variables(model_file_1, sess_1)
+                    save_variables(model_file_1, sess_1, "deepq_1")
                     model_saved_1 = True
                     saved_mean_reward_1 = mean_100ep_reward_1
 
                 if multiplayer and (saved_mean_reward_2 is None or mean_100ep_reward_2 > saved_mean_reward_2):
                     if print_freq is not None:
                         logger.log("Saving model 2 due to mean reward increase: {} -> {}".format(saved_mean_reward_2, mean_100ep_reward_2))
-                    save_variables(model_file_2, sess_2)
+                    save_variables(model_file_2, sess_2, "deepq_2")
                     model_saved_2 = True
                     saved_mean_reward_2 = mean_100ep_reward_2
         # restore models at the end to the best performers
         if model_saved_1:
             if print_freq is not None:
                 logger.log("Restored model 1 with mean reward: {}".format(saved_mean_reward_1))
-            load_variables(model_file_1, sess_1)
+            load_variables(model_file_1, sess_1, "deepq_1")
         if multiplayer and model_saved_2:
             if print_freq is not None:
                 logger.log("Restored model 2 with mean reward: {}".format(saved_mean_reward_2))
-            load_variables(model_file_2, sess_2)
+            load_variables(model_file_2, sess_2, "deepq_2")
 
     return act_1, act_2, sess_1, sess_2

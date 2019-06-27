@@ -350,10 +350,10 @@ def save_state(fname, sess=None):
 # The methods above and below are clearly doing the same thing, and in a rather similar way
 # TODO: ensure there is no subtle differences and remove one
 
-def save_variables(save_path, sess, variables=None):
+def save_variables(save_path, sess, scope):
     # pass in session
     import joblib
-    variables = variables or tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+    variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
     # run the session
     ps = sess.run(variables)
     save_dict = {v.name: value for v, value in zip(variables, ps)}
@@ -362,10 +362,10 @@ def save_variables(save_path, sess, variables=None):
         os.makedirs(dirname, exist_ok=True)
     joblib.dump(save_dict, save_path)
 
-def load_variables(load_path, sess, variables=None):
+def load_variables(load_path, sess, scope):
     # pass in session
     import joblib
-    variables = variables or tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+    variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
     loaded_params = joblib.load(os.path.expanduser(load_path))
     restores = []
     if isinstance(loaded_params, list):

@@ -240,9 +240,9 @@ def main(args):
             save_path_1 = osp.expanduser(args.save_path + "_player1")
             # I needed the sessions to properly save the models here
             # the variables are specifically linked to the sessions
-            model_1.save(save_path_1, sess_1)
+            model_1.save(save_path_1, sess_1, "deepq_1")
             save_path_2 = osp.expanduser(args.save_path + "_player2")
-            model_2.save(save_path_2, sess_2)
+            model_2.save(save_path_2, sess_2, "deepq_2")
         else:
             save_path = osp.expanduser(args.save_path)
             model_1.save(save_path, sess_1)

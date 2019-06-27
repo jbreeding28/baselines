@@ -384,7 +384,6 @@ def build_train(sess, suffix, make_obs_ph, q_func, num_actions, optimizer, grad_
         a bunch of functions to print debug data like q_values.
     """
     # adding these suffixes to scope names is crucial to separate the variables between sessions, otherwise there will be problems with sessions trying to share variables
-    scope = scope+suffix
     # Add the suffix to the main scope. It may have been simpler just to change that instead of changing everything. But when I was working on it, it made more sense to explicitly state that each session's separate variables (reward, q function, weights, etc) were specifically and differently named
     # What I did appears to work, so I will just leave it as is and not change it unless problems crop up
     if param_noise:
