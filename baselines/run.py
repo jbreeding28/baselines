@@ -76,16 +76,18 @@ def train(args, extra_args):
             alg_kwargs['network'] = get_default_network(env_type)
 
     print('Training {} on {}:{} with arguments \n{}'.format(args.alg, env_type, env_id, alg_kwargs))
-
-    model = learn(
+    # updated learning function, returning up to two models
+    # I have to pass in the multiplayer argument
+    model_1, model_2, sess_1, sess_2 = learn(
         env=env,
         seed=seed,
         total_timesteps=total_timesteps,
         print_freq=10,
+        multiplayer=args.multiplayer,
         **alg_kwargs
     )
 
-    return model, env
+    return model_1, model_2, sess_1, sess_2, env
 
 
 def build_env(args):
@@ -226,15 +228,32 @@ def main(args):
     else:
         rank = MPI.COMM_WORLD.Get_rank()
         configure_logger(args.log_path, format_strs=[])
-    model, env = train(args, extra_args)
+    # return two models, two sessions, and the environment type
+    # if there's only a single model being trained, model_2 and sess_2 are None
+    model_1, model_2, sess_1, sess_2, env = train(args, extra_args)
+    # figure out if it's a multiplayer session
+    # multiplayer stuff is left entirely up to the user
+    multiplayer = args.multiplayer
     if args.save_path is not None and rank == 0:
-        save_path = osp.expanduser(args.save_path)
-        model.save(save_path)
+        # if two models were made, save them both with suffixes
+        if multiplayer:
+            save_path_1 = osp.expanduser(args.save_path + "_player1")
+            # I needed the sessions to properly save the models here
+            # the variables are specifically linked to the sessions
+            model_1.save(save_path_1, sess_1)
+            save_path_2 = osp.expanduser(args.save_path + "_player2")
+            model_2.save(save_path_2, sess_2)
+        else:
+            save_path = osp.expanduser(args.save_path)
+            model_1.save(save_path, sess_1)
     # play a number of games to evaluate the network
     if args.play:
         logger.log("Running trained model")
         obs = env.reset()
-        state = model.initial_state if hasattr(model, 'initial_state') else None
+        state_1 = model_1.initial_state if hasattr(model_1, 'initial_state') else None
+        # copy what the first model is doing if there's multiple models
+        if multiplayer:
+            state_2 = model_2.initial_state if hasattr(model_2, 'initial_state') else None
         dones = np.zeros((1,))
         # BEGIN MY CODE
         # create a bunch of variables for holding various types of scores
@@ -286,14 +305,30 @@ def main(args):
             # each loop through, get the current time at the start
             start_time = datetime.datetime.now()
             # get the appropriate action based on the observation of the environment
-            if state is not None:
-                actions, _, state, _ = model.step(obs,S=state, M=dones)
+            if state_1 is not None:
+                action_1, _, state_1, _ = model_1.step(obs,S=state_1, M=dones)
+            # duplicate for a second model
+            if multiplayer and state_2 is not None:
+                action_2, _, state_2, _ = model_2.step(obs,S=state_2, M=dones)
+                
             else:
-                actions, _, _, _ = model.step(obs)
+                action_1, _, _, _ = model_1.step(obs)
+                # have the second model take an action if appropriate
+                if multiplayer:
+                    action_2, _, _, _ = model_2.step(obs)
             # take a step forward in the environment, return new observation
-            # return any reward and if the player died
-            obs, rew, done, _ = env.step(actions)
-            # get the number of lives remaining
+            # return any reward and if the environment needs to be reset
+            
+            # pass in both actions if there are two models
+            # reward in this case is the default reward
+            # in competitive multiplayer, this is Player 1's reward
+            if multiplayer:
+                obs, rew, done, _ = env.step(action_1, action_2)
+            # otherwise, ignore the second 
+            else:
+                obs, rew, done, _ = env.step(action_1)
+            # get the number of lives remaining, which is relevant in certain games
+            # in the multiplayer games I'll look at, the players should share a common life
             lives = env.getLives()
             # add reward from previous step to overall score
             episode_rew += rew[0] if isinstance(env, VecEnv) else rew
@@ -356,7 +391,7 @@ def main(args):
         # END MY CODE
 
     env.close()
-    return model
+    return model_1, model_2
 
 if __name__ == '__main__':
     main(sys.argv)

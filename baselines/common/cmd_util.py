@@ -184,6 +184,8 @@ def common_arg_parser():
     parser.add_argument('--num_games', default=10, type=float)
     # mode of the game
     parser.add_argument('--mode', default=1, type=int)
+    # multiplayer argument
+    parser.add_argument('--multiplayer', default=False, action='store_true')
     return parser
 
 def robotics_arg_parser():

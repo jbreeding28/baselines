@@ -32,13 +32,13 @@ class NoopResetEnv(gym.Wrapper):
         assert noops > 0
         obs = None
         for _ in range(noops):
-            obs, _, done, _ = self.env.step(self.noop_action)
+            obs, _, done, _ = self.env.step(self.noop_action, self.noop_action)
             if done:
                 obs = self.env.reset(**kwargs)
         return obs
 
-    def step(self, ac):
-        return self.env.step(ac)
+    def step(self, action_a, action_b=0):
+        return self.env.step(action_a, action_b)
 
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
@@ -49,16 +49,16 @@ class FireResetEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         self.env.reset(**kwargs)
-        obs, _, done, _ = self.env.step(1)
+        obs, _, done, _ = self.env.step(1, 1)
         if done:
             self.env.reset(**kwargs)
-        obs, _, done, _ = self.env.step(2)
+        obs, _, done, _ = self.env.step(2, 2)
         if done:
             self.env.reset(**kwargs)
         return obs
 
-    def step(self, ac):
-        return self.env.step(ac)
+    def step(self, action_a, action_b=0):
+        return self.env.step(action_a, action_b)
 
 class EpisodicLifeEnv(gym.Wrapper):
     def __init__(self, env):
@@ -69,8 +69,8 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.lives = 0
         self.was_real_done  = True
 
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
+    def step(self, action_a, action_b=0):
+        obs, reward, done, info = self.env.step(action_a, action_b)
         self.was_real_done = done
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
@@ -104,12 +104,12 @@ class MaxAndSkipEnv(gym.Wrapper):
         self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.uint8)
         self._skip       = skip
 
-    def step(self, action):
+    def step(self, action_a, action_b=0):
         """Repeat action, sum reward, and max over last observations."""
         total_reward = 0.0
         done = None
         for i in range(self._skip):
-            obs, reward, done, info = self.env.step(action)
+            obs, reward, done, info = self.env.step(action_a, action_b)
             if i == self._skip - 2: self._obs_buffer[0] = obs
             if i == self._skip - 1: self._obs_buffer[1] = obs
             total_reward += reward
@@ -209,8 +209,8 @@ class FrameStack(gym.Wrapper):
             self.frames.append(ob)
         return self._get_ob()
 
-    def step(self, action):
-        ob, reward, done, info = self.env.step(action)
+    def step(self, action_a, action_b=0):
+        ob, reward, done, info = self.env.step(action_a, action_b)
         self.frames.append(ob)
         return self._get_ob(), reward, done, info
 

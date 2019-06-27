@@ -84,10 +84,13 @@ def in_session(f):
 
 ALREADY_INITIALIZED = set()
 
-def initialize():
+def initialize(sess):
+    # pass in the session to explicitly initialize multiple sessions
     """Initialize all the uninitialized variables in the global scope."""
     new_variables = set(tf.global_variables()) - ALREADY_INITIALIZED
-    get_session().run(tf.variables_initializer(new_variables))
+    # had to explicitly initialize global variables, otherwise I got errors
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.variables_initializer(new_variables))
     ALREADY_INITIALIZED.update(new_variables)
 
 # ================================================================
@@ -134,7 +137,7 @@ def conv2d(x, num_filters, name, filter_size=(3, 3), stride=(1, 1), pad="SAME", 
 # Theano-like Function
 # ================================================================
 
-def function(inputs, outputs, updates=None, givens=None):
+def function(sess, inputs, outputs, updates=None, givens=None):
     """Just like Theano function. Take a bunch of tensorflow placeholders and expressions
     computed based on those placeholders and produces f(inputs) -> outputs. Function f takes
     values to be fed to the input's placeholders and produces the values of the expressions
@@ -169,18 +172,21 @@ def function(inputs, outputs, updates=None, givens=None):
         the function is called. The return is ignored.
 
     """
+    # only change here is passing in the session
     if isinstance(outputs, list):
-        return _Function(inputs, outputs, updates, givens=givens)
+        return _Function(sess, inputs, outputs, updates, givens=givens)
     elif isinstance(outputs, (dict, collections.OrderedDict)):
-        f = _Function(inputs, outputs.values(), updates, givens=givens)
+        f = _Function(sess, inputs, outputs.values(), updates, givens=givens)
         return lambda *args, **kwargs: type(outputs)(zip(outputs.keys(), f(*args, **kwargs)))
     else:
-        f = _Function(inputs, [outputs], updates, givens=givens)
+        f = _Function(sess, inputs, [outputs], updates, givens=givens)
         return lambda *args, **kwargs: f(*args, **kwargs)[0]
 
 
 class _Function(object):
-    def __init__(self, inputs, outputs, updates, givens):
+    def __init__(self, sess, inputs, outputs, updates, givens):
+        # save the session as a parameter
+        self.sess = sess
         for inpt in inputs:
             if not hasattr(inpt, 'make_feed_dict') and not (type(inpt) is tf.Tensor and len(inpt.op.inputs) == 0):
                 assert False, "inputs should all be placeholders, constants, or have a make_feed_dict method"
@@ -208,7 +214,9 @@ class _Function(object):
             self._feed_input(feed_dict, inpt, value)
         for inpt_name, value in kwargs.items():
             self._feed_input(feed_dict, self.input_names[inpt_name], value)
-        results = get_session().run(self.outputs_update, feed_dict=feed_dict)[:-1]
+        # This is why the session is passed in
+        # so I can run the update function in the correct session easily
+        results = self.sess.run(self.outputs_update, feed_dict=feed_dict)[:-1]
         return results
 
 # ================================================================
@@ -342,11 +350,11 @@ def save_state(fname, sess=None):
 # The methods above and below are clearly doing the same thing, and in a rather similar way
 # TODO: ensure there is no subtle differences and remove one
 
-def save_variables(save_path, variables=None, sess=None):
+def save_variables(save_path, sess, variables=None):
+    # pass in session
     import joblib
-    sess = sess or get_session()
     variables = variables or tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-
+    # run the session
     ps = sess.run(variables)
     save_dict = {v.name: value for v, value in zip(variables, ps)}
     dirname = os.path.dirname(save_path)
@@ -354,11 +362,10 @@ def save_variables(save_path, variables=None, sess=None):
         os.makedirs(dirname, exist_ok=True)
     joblib.dump(save_dict, save_path)
 
-def load_variables(load_path, variables=None, sess=None):
+def load_variables(load_path, sess, variables=None):
+    # pass in session
     import joblib
-    sess = sess or get_session()
     variables = variables or tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-
     loaded_params = joblib.load(os.path.expanduser(load_path))
     restores = []
     if isinstance(loaded_params, list):
@@ -368,7 +375,7 @@ def load_variables(load_path, variables=None, sess=None):
     else:
         for v in variables:
             restores.append(v.assign(loaded_params[v.name]))
-
+    # run the specific session here
     sess.run(restores)
 
 # ================================================================
