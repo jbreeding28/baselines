@@ -245,7 +245,7 @@ def main(args):
             model_2.save(save_path_2, sess_2, "deepq_2")
         else:
             save_path = osp.expanduser(args.save_path)
-            model_1.save(save_path, sess_1)
+            model_1.save(save_path, sess_1, "deepq_1")
     # play a number of games to evaluate the network
     if args.play:
         logger.log("Running trained model")
