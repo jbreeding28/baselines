@@ -32,7 +32,7 @@ class NoopResetEnv(gym.Wrapper):
         assert noops > 0
         obs = None
         for _ in range(noops):
-            obs, _, done, _ = self.env.step(self.noop_action, self.noop_action)
+            obs, _, _, done, _ = self.env.step(self.noop_action, self.noop_action)
             if done:
                 obs = self.env.reset(**kwargs)
         return obs
@@ -49,10 +49,10 @@ class FireResetEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         self.env.reset(**kwargs)
-        obs, _, done, _ = self.env.step(1, 1)
+        obs, _, _, done, _ = self.env.step(1, 1)
         if done:
             self.env.reset(**kwargs)
-        obs, _, done, _ = self.env.step(2, 2)
+        obs, _, _, done, _ = self.env.step(2, 2)
         if done:
             self.env.reset(**kwargs)
         return obs
@@ -70,7 +70,7 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.was_real_done  = True
 
     def step(self, action_a, action_b=0):
-        obs, reward, done, info = self.env.step(action_a, action_b)
+        obs, reward_1, reward_2, done, info = self.env.step(action_a, action_b)
         self.was_real_done = done
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
@@ -81,7 +81,7 @@ class EpisodicLifeEnv(gym.Wrapper):
             # the environment advertises done.
             done = True
         self.lives = lives
-        return obs, reward, done, info
+        return obs, reward_1, reward_2, done, info
 
     def reset(self, **kwargs):
         """Reset only when lives are exhausted.
@@ -92,7 +92,7 @@ class EpisodicLifeEnv(gym.Wrapper):
             obs = self.env.reset(**kwargs)
         else:
             # no-op step to advance from terminal/lost life state
-            obs, _, _, _ = self.env.step(0)
+            obs, _, _, _, _ = self.env.step(0)
         self.lives = self.env.unwrapped.ale.lives()
         return obs
 
@@ -106,20 +106,22 @@ class MaxAndSkipEnv(gym.Wrapper):
 
     def step(self, action_a, action_b=0):
         """Repeat action, sum reward, and max over last observations."""
-        total_reward = 0.0
+        total_reward_1 = 0.0
+        total_reward_2 = 0.0
         done = None
         for i in range(self._skip):
-            obs, reward, done, info = self.env.step(action_a, action_b)
+            obs, reward_1, reward_2, done, info = self.env.step(action_a, action_b)
             if i == self._skip - 2: self._obs_buffer[0] = obs
             if i == self._skip - 1: self._obs_buffer[1] = obs
-            total_reward += reward
+            total_reward_1 += reward_1
+            total_reward_2 += reward_2
             if done:
                 break
         # Note that the observation on the done=True frame
         # doesn't matter
         max_frame = self._obs_buffer.max(axis=0)
 
-        return max_frame, total_reward, done, info
+        return max_frame, total_reward_1, total_reward_2, done, info
 
     def reset(self, **kwargs):
         return self.env.reset(**kwargs)
@@ -210,9 +212,9 @@ class FrameStack(gym.Wrapper):
         return self._get_ob()
 
     def step(self, action_a, action_b=0):
-        ob, reward, done, info = self.env.step(action_a, action_b)
+        ob, reward_1, reward_2, done, info = self.env.step(action_a, action_b)
         self.frames.append(ob)
-        return self._get_ob(), reward, done, info
+        return self._get_ob(), reward_1, reward_2, done, info
 
     def _get_ob(self):
         assert len(self.frames) == self.k

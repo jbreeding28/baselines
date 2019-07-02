@@ -98,7 +98,11 @@ def build_env(args):
     seed = args.seed
     play = args.play
     mode = args.mode
+    multiplayer = args.multiplayer
     env_type, env_id = get_env_type(args)
+    isSpaceInvaders = False
+    if "SpaceInvaders" in args.env:
+        isSpaceInvaders = True
     if env_type in {'atari', 'retro'}:
         # this should be the only algorithm I'll use
         if alg == 'deepq':
@@ -111,7 +115,11 @@ def build_env(args):
                 env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False}, env_kwargs={'game_mode': mode})
             else:
                 # otherwise, keep the basic reward used by the base algorithm
-                env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': True}, env_kwargs={'game_mode': mode})
+                if multiplayer and isSpaceInvaders:
+                    # unclip rewards for space invaders multiplayer, I'll do it manually.
+                    env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': False}, env_kwargs={'game_mode': mode})
+                else:
+                    env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True, 'clip_rewards': True}, env_kwargs={'game_mode': mode})
             # END MY CODE
         elif alg == 'trpo_mpi':
             env = make_env(env_id, env_type, seed=seed)
@@ -259,16 +267,20 @@ def main(args):
         # create a bunch of variables for holding various types of scores
 
         # episode reward is left over from the original but isn't really used
-        episode_rew = 0
+        episode_rew_1 = 0
+        episode_rew_2 = 0
 
         # these variables hold the score of the current game and score across all games
         game_score = 0
+        game_score_1 = 0
+        game_score_2 = 0
         total_score = 0
 
         # keep hold of the highest score, initialize to zero
         max_score = 0
         # keep track of how many games are played
         game_count = 0
+        game_steps = 0
 
         # get the number of games that are specified (default 10)
         # dependent on the user to make sure the number is valid
@@ -298,6 +310,9 @@ def main(args):
         isPong = False
         if "Pong" in args.env:
             isPong = True
+        isSpaceInvaders = False
+        if "SpaceInvaders" in args.env:
+            isSpaceInvaders = True
 
         # while loop carried over from base code
         # this will play games until so many have been played
@@ -323,15 +338,25 @@ def main(args):
             # reward in this case is the default reward
             # in competitive multiplayer, this is Player 1's reward
             if multiplayer:
-                obs, rew, done, _ = env.step(action_1, action_2)
+                obs, rew_1, rew_2, done, _ = env.step(action_1, action_2)
             # otherwise, ignore the second 
             else:
-                obs, rew, done, _ = env.step(action_1)
+                obs, rew_1, rew_2, done, _ = env.step(action_1)
+            game_steps += 1
+            # check to see if either player has died in Space Invaders multiplayer
+            # this rewards a player when their opponent dies
+            # remove this just to measure the score gained from destroying aliens
+            if isSpaceInvaders and multiplayer:
+                if rew_1 == 200:
+                    rew_1 = 0
+                if rew_2 == 200:
+                    rew_2 = 0
             # get the number of lives remaining, which is relevant in certain games
             # in the multiplayer games I'll look at, the players should share a common life
             lives = env.getLives()
             # add reward from previous step to overall score
-            episode_rew += rew[0] if isinstance(env, VecEnv) else rew
+            episode_rew_1 += rew_1[0] if isinstance(env, VecEnv) else rew_1
+            episode_rew_2 += rew_2[0] if isinstance(env, VecEnv) else rew_2
             # render the frame if the user wants it
             if render:
                 env.render()
@@ -341,13 +366,16 @@ def main(args):
             if done:
                 # Pong only uses done on game over, so make the episode reward the game score
                 if isPong:
-                    game_score = episode_rew
+                    game_score = episode_rew_1
                 # if it's not Pong, just do what I did before
                 else:
-                    game_score += episode_rew
-                total_score += episode_rew
+                    game_score += episode_rew_1 + episode_rew_2
+                game_score_1 += episode_rew_1
+                game_score_2 += episode_rew_2
+                total_score += episode_rew_1 + episode_rew_2
                 # reset for next go around
-                episode_rew = 0
+                episode_rew_1 = 0
+                episode_rew_2 = 0
                 # reset the environment
 
                 # on game over, this starts a new game
@@ -376,11 +404,20 @@ def main(args):
                 # this method is based off of what I saw in the Deep Q code
                 # record the data to the logger
                 logger.record_tabular("game", game_count)
-                logger.record_tabular("score", game_score)
+                if multiplayer:
+                    logger.record_tabular("total score", game_score)
+                    logger.record_tabular("player 1 score", game_score_1)
+                    logger.record_tabular("player 2 score", game_score_2)
+                else:
+                    logger.record_tabular("score", game_score)
+                logger.record_tabular("steps", game_steps)
                 # then dump it to the log file and the terminal
                 logger.dump_tabular()
                 # game is over, reset the score
                 game_score = 0
+                game_score_1 = 0
+                game_score_2 = 0
+                game_steps = 0
             # print out average and max score when number of games is finished
             if game_count == num_games:
                 print(" ")
@@ -389,7 +426,7 @@ def main(args):
                 # break out of this true loop
                 break
         # END MY CODE
-
+    time.sleep(5)
     env.close()
     return model_1, model_2
 

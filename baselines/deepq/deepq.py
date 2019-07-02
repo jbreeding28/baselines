@@ -195,6 +195,12 @@ def learn(env,
     # Variables have a _1 or _2 appended to them to separate them
     # and a bunch of if statementss to have the _2 variables not do anything in single-player
 
+
+    # when in multiplayer Space Invaders, need to not reward players for other player dying
+    isSpaceInvaders = False
+    if "SpaceInvaders" in str(env):
+        isSpaceInvaders = True
+
     # Create all the functions necessary to train the model
     # Create two separate TensorFlow sessions
     sess_1 = tf.Session()
@@ -378,24 +384,36 @@ def learn(env,
             reset = False
             # apply actions to the environment
             if multiplayer:
-                new_obs, rew, done, _ = env.step(env_action_1, env_action_2)
+                new_obs, rew_1, rew_2, done, _ = env.step(env_action_1, env_action_2)
             # apply single action if there isn't a second model
             else:
-                new_obs, rew, done, _ = env.step(env_action_1)
-            # Store transition in the replay buffers
-            replay_buffer_1.add(obs, action_1, rew, new_obs, float(done))
-            if multiplayer:
-                # invert sign of the reward for player 2 (currently only works for competitive)
-                # Player 1 gets positive reward when they score and negative reward when player 2 scores
-                # inverting sign will reward Player 2 for when they score
-                replay_buffer_2.add(obs, action_2, -rew, new_obs, float(done))
-            obs = new_obs
+                new_obs, rew_1, rew_2, done, _ = env.step(env_action_1)
 
-            # separate rewards for each model
-            episode_rewards_1[-1] += rew
+            # manual clipping for Space Invaders multiplayer
+            if isSpaceInvaders and multiplayer:
+                # don't reward a player when the other player dies
+                # change the reward to 0
+
+                # the only time either player will get rewarded 200 is when the other player dies
+                if rew_1 == 200:
+                    rew_1 = 0.0
+                if rew_2 == 200:
+                    rew_2 = 0.0
+                # manually clip the rewards using the sign function
+                rew_1 = np.sign(rew_1)
+                rew_2 = np.sign(rew_2)
+
+            # Store transition in the replay buffers
+            replay_buffer_1.add(obs, action_1, rew_1, new_obs, float(done))
             if multiplayer:
-                # invert sign here for model 2 as well
-                episode_rewards_2[-1] += -rew
+                # pass reward_2 to the second player
+                # this reward will vary based on the game
+                replay_buffer_2.add(obs, action_2, rew_2, new_obs, float(done))
+            obs = new_obs
+            # separate rewards for each model
+            episode_rewards_1[-1] += rew_1
+            if multiplayer:
+                episode_rewards_2[-1] += rew_2
             if done:
                 obs = env.reset()
                 episode_rewards_1.append(0.0)
