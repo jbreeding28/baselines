@@ -136,5 +136,4 @@ def build_q_func(network, hiddens=[256], dueling=True, layer_norm=False, **netwo
             else:
                 q_out = action_scores
             return q_out
-
     return q_func_builder

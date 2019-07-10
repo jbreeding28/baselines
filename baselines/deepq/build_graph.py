@@ -401,7 +401,6 @@ def build_train(sess, suffix, make_obs_ph, q_func, num_actions, optimizer, grad_
         obs_tp1_input = make_obs_ph("obs_tp1"+suffix)
         done_mask_ph = tf.placeholder(tf.float32, [None], name="done"+suffix)
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight"+suffix)
-
         # q network evaluation
         q_t = q_func(obs_t_input.get(), num_actions, scope="q_func"+suffix, reuse=True)  # reuse parameters from act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func"+suffix)
@@ -465,5 +464,4 @@ def build_train(sess, suffix, make_obs_ph, q_func, num_actions, optimizer, grad_
         update_target = U.function(sess, [], [], updates=[update_target_expr])
         # pass the session into the Q function
         q_values = U.function(sess, [obs_t_input], q_t)
-
-        return act_f, train, update_target, {'q_values': q_values}
+        return act_f, train, update_target, q_values

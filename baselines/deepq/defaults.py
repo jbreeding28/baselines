@@ -11,7 +11,7 @@ def atari():
         gamma=0.99,
         prioritized_replay=True,
         prioritized_replay_alpha=0.6,
-        checkpoint_freq=None,
+        checkpoint_freq=10000,
         checkpoint_path=None,
         dueling=True
     )

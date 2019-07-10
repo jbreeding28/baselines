@@ -64,7 +64,10 @@ def train(args, extra_args):
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
     alg_kwargs.update(extra_args)
-
+    if args.save_interval == 0:
+        save_interval = None
+    else:
+        save_interval = args.save_interval
     env = build_env(args)
     if args.save_video_interval != 0:
         env = VecVideoRecorder(env, osp.join(logger.get_dir(), "videos"), record_video_trigger=lambda x: x % args.save_video_interval == 0, video_length=args.save_video_length)
@@ -84,6 +87,8 @@ def train(args, extra_args):
         total_timesteps=total_timesteps,
         print_freq=10,
         multiplayer=args.multiplayer,
+        save_interval=save_interval,
+        save_path=args.save_path,
         **alg_kwargs
     )
 
@@ -242,7 +247,7 @@ def main(args):
     # figure out if it's a multiplayer session
     # multiplayer stuff is left entirely up to the user
     multiplayer = args.multiplayer
-    if args.save_path is not None and rank == 0:
+    if args.save_path is not None and rank == 0 and args.save_interval == 0:
         # if two models were made, save them both with suffixes
         if multiplayer:
             save_path_1 = osp.expanduser(args.save_path + "_player1")
@@ -372,7 +377,10 @@ def main(args):
                     game_score += episode_rew_1 + episode_rew_2
                 game_score_1 += episode_rew_1
                 game_score_2 += episode_rew_2
-                total_score += episode_rew_1 + episode_rew_2
+                if isPong:
+                    total_score += episode_rew_1
+                else:
+                    total_score += episode_rew_1 + episode_rew_2
                 # reset for next go around
                 episode_rew_1 = 0
                 episode_rew_2 = 0
@@ -422,12 +430,12 @@ def main(args):
             if game_count == num_games:
                 print(" ")
                 print('average score={}'.format(float(total_score/num_games)))
-                print('max score={}'.format(max_score))
                 # break out of this true loop
                 break
         # END MY CODE
-    time.sleep(5)
     env.close()
+    # writer = tf.summary.FileWriter("./graphs", sess_1.graph)
+    # writer = tf.summary.FileWriter("./graphs", sess_2.graph)
     return model_1, model_2
 
 if __name__ == '__main__':

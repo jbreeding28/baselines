@@ -186,8 +186,8 @@ def common_arg_parser():
     parser.add_argument('--mode', default=1, type=int)
     # multiplayer argument
     parser.add_argument('--multiplayer', default=False, action='store_true')
-    # competitive argument
-    parser.add_argument('--competitive', default=False, action='store_true')
+    # rate at which to save progress
+    parser.add_argument('--save_interval', default=0, type=int)
     return parser
 
 def robotics_arg_parser():

@@ -5,6 +5,7 @@ import tensorflow as tf
 import zipfile
 import cloudpickle
 import numpy as np
+import os.path as osp
 
 import baselines.common.tf_util as U
 from baselines.common.tf_util import load_variables, save_variables
@@ -28,8 +29,6 @@ class ActWrapper(object):
 
     @staticmethod
     def load_act(path):
-        print("Here!")
-        time.sleep(5)
         with open(path, "rb") as f:
             model_data, act_params = cloudpickle.load(f)
         act = deepq.build_act(**act_params)
@@ -117,6 +116,8 @@ def learn(env,
           prioritized_replay_eps=1e-6,
           param_noise=False,
           multiplayer=False,
+          save_interval=None,
+          save_path=None,
           callback=None,
           load_path=None,
           load_path_1=None,
@@ -200,12 +201,12 @@ def learn(env,
     isSpaceInvaders = False
     if "SpaceInvaders" in str(env):
         isSpaceInvaders = True
-
+    interval_count=1
     # Create all the functions necessary to train the model
     # Create two separate TensorFlow sessions
-    sess_1 = tf.Session()
+    sess_1 = tf.InteractiveSession()
     if multiplayer:
-        sess_2 = tf.Session()
+        sess_2 = tf.InteractiveSession()
     else:
         # set session 2 to None if it's not being used
         sess_2 = None
@@ -319,9 +320,11 @@ def learn(env,
     with tempfile.TemporaryDirectory() as td:
         td = checkpoint_path or td
         model_file_1 = os.path.join(td, "model_1")
+        temp_file_1 = os.path.join(td, "temp_1")
         model_saved_1 = False
         if multiplayer:
             model_file_2 = os.path.join(td, "model_2")
+            temp_file_2 = os.path.join(td, "temp_2")
             model_saved_2 = False
 
         if tf.train.latest_checkpoint(td) is not None:
@@ -353,9 +356,11 @@ def learn(env,
             logger.log('Loaded model 1 from {}'.format(load_path_1))
             load_variables(load_path_2, sess_2, "deepq_2")
             logger.log('Loaded model 2 from {}'.format(load_path_2))
-
+        
         # actual training starts here
         for t in range(total_timesteps):
+            # use this for updating purposes
+            actual_t = t+1
             if callback is not None:
                 if callback(locals(), globals()):
                     break
@@ -402,6 +407,11 @@ def learn(env,
                 # manually clip the rewards using the sign function
                 rew_1 = np.sign(rew_1)
                 rew_2 = np.sign(rew_2)
+                combo_factor = 0.25
+                rew_1_combo = rew_1 + combo_factor*rew_2
+                rew_2_combo = rew_2 + combo_factor*rew_1
+                rew_1 = rew_1_combo
+                rew_2 = rew_2_combo
 
             # Store transition in the replay buffers
             replay_buffer_1.add(obs, action_1, rew_1, new_obs, float(done))
@@ -420,8 +430,7 @@ def learn(env,
                 if multiplayer:
                     episode_rewards_2.append(0.0)
                 reset = True
-
-            if t > learning_starts and t % train_freq == 0:
+            if actual_t > learning_starts and actual_t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
                 # sample from the two replay buffers
                 if prioritized_replay:
@@ -450,11 +459,12 @@ def learn(env,
                         new_priorities_2 = np.abs(td_errors_2) + prioritized_replay_eps
                         replay_buffer_2.update_priorities(batch_idxes_2, new_priorities_2)
 
-            if t > learning_starts and t % target_network_update_freq == 0:
+            if actual_t > learning_starts and actual_t % target_network_update_freq == 0:
                 # Update target networks periodically.
                 update_target_1()
                 if multiplayer:
                     update_target_2()
+
 
             # this section is for the purposes of logging stuff
             # calculate the average reward over the last 100 episodes
@@ -477,8 +487,9 @@ def learn(env,
 
             # save best-performing version of each model
             # I've opted out of this for competitive multiplayer because it's difficult to determine what's "best"
-            if (checkpoint_freq is not None and t > learning_starts and
-                    num_episodes > 100 and t % checkpoint_freq == 0):
+            
+            if (checkpoint_freq is not None and actual_t > learning_starts and
+                    num_episodes > 100 and actual_t % checkpoint_freq == 0):
                 # if there's a best reward, save it as the new best model
                 if saved_mean_reward_1 is None or mean_100ep_reward_1 > saved_mean_reward_1:
                     if print_freq is not None:
@@ -496,6 +507,31 @@ def learn(env,
                     save_variables(model_file_2, sess_2, "deepq_2")
                     model_saved_2 = True
                     saved_mean_reward_2 = mean_100ep_reward_2
+
+            if save_interval is not None and actual_t % save_interval == 0 and save_path is not None:
+                if multiplayer:
+                    if model_saved_1 and model_saved_2:
+                        save_variables(temp_file_1, sess_1, "deepq_1")
+                        save_variables(temp_file_2, sess_2, "deepq_2")
+                        load_variables(model_file_1, sess_1, "deepq_1")
+                        load_variables(model_file_2, sess_2, "deepq_2")
+                    save_path_1 = osp.expanduser(save_path + "/stage" + str(interval_count) + "_player1")
+                    save_path_2 = osp.expanduser(save_path + "/stage" + str(interval_count) + "_player2")
+                    act_1.save(save_path_1, sess_1, "deepq_1")
+                    act_2.save(save_path_2, sess_2, "deepq_2")
+                    if model_saved_1 and model_saved_2:
+                        load_variables(temp_file_1, sess_1, "deepq_1")
+                        load_variables(temp_file_2, sess_2, "deepq_2")
+                else:
+                    if model_saved_1:
+                        save_variables(temp_file_1, sess_1, "deepq_1")
+                        load_variables(model_file_1, sess_1, "deepq_1")
+                    save_path_solo = osp.expanduser(save_path + "/stage" + str(interval_count))
+                    act_1.save(save_path_solo, sess_1, "deepq_1")
+                    if model_saved_1:
+                        load_variables(temp_file_1, sess_1, "deepq_1")
+                interval_count = interval_count + 1
+
         # restore models at the end to the best performers
         if model_saved_1:
             if print_freq is not None:
@@ -505,5 +541,4 @@ def learn(env,
             if print_freq is not None:
                 logger.log("Restored model 2 with mean reward: {}".format(saved_mean_reward_2))
             load_variables(model_file_2, sess_2, "deepq_2")
-
     return act_1, act_2, sess_1, sess_2
