@@ -8,10 +8,11 @@ MULTIPLAYER_TRAIN=false
 MULTIPLAYER_PLAY=false
 TRAIN_MODE=1
 PLAY_MODE=1
-NUM_GAMES=100
+NUM_GAMES=1
 SAVE_PATH=~/models/Pong_computer_performance_1m
-LOAD_PATH_TRAIN_1=NULL
-LOAD_PATH_TRAIN_2=NULL
+# purposely left blank
+LOAD_PATH_TRAIN_1=
+LOAD_PATH_TRAIN_2=
 
 
 # number of full full steps
@@ -66,6 +67,7 @@ cd baselines
 
 # check if I need to load an initial model in
 if [ -z "$LOAD_PATH_TRAIN_1" ] && [ -z "$LOAD_PATH_TRAIN_2" ]
+then
     if ($MULTIPLAYER_TRAIN)
     then
         python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=$NUM_STEPS --save_interval=$SAVE_INTERVAL --multiplayer --mode=$TRAIN_MODE --save_path=$SAVE_PATH
@@ -79,16 +81,26 @@ else
         # check if a load model for player 1 exists. If not, execute the first statement and load only player 2.
         # verified that one of the paths exists, so if player 1's doesn't exist, then only player 2's exists
         if [ -z "$LOAD_PATH_TRAIN_1" ]
+        then
             python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=$NUM_STEPS --save_interval=$SAVE_INTERVAL --multiplayer --mode=$TRAIN_MODE --save_path=$SAVE_PATH --load_path_2=$LOAD_PATH_2
         # if no load path exists for loading in player 2 but a player 1
         elif [ -z "$LOAD_PATH_TRAIN_2" ]
+        then
             python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=$NUM_STEPS --save_interval=$SAVE_INTERVAL --multiplayer --mode=$TRAIN_MODE --save_path=$SAVE_PATH --load_path_1=$LOAD_PATH_1
         # here, both players should be loaded
         else
             python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=$NUM_STEPS --save_interval=$SAVE_INTERVAL --multiplayer --mode=$TRAIN_MODE --save_path=$SAVE_PATH --load_path_1=$LOAD_PATH_1 --load_path_2=$LOAD_PATH_2
         fi
     else
-        python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=$NUM_STEPS --save_interval=$SAVE_INTERVAL --mode=$TRAIN_MODE --save_path=$SAVE_PATH --load_path=$LOAD_PATH_1
+    # in single-player, if load path doesn't exist
+        if [ -z "$LOAD_PATH_TRAIN_1" ]
+        then
+            echo "HERE!"
+            sleep 5
+            python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=$NUM_STEPS --save_interval=$SAVE_INTERVAL --mode=$TRAIN_MODE --save_path=$SAVE_PATH
+        else
+            python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=$NUM_STEPS --save_interval=$SAVE_INTERVAL --mode=$TRAIN_MODE --save_path=$SAVE_PATH --load_path=$LOAD_PATH_1
+        fi
     fi
 fi
 
