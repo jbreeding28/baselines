@@ -202,11 +202,17 @@ def learn(env,
     if "SpaceInvaders" in str(env):
         isSpaceInvaders = True
     interval_count=1
+
+
+    # put a limit on the amount of memory used, otherwise TensorFlow will consume nearly everything
+    # this leaves 1 GB free on my computer, others may need to change it
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.65)
+
     # Create all the functions necessary to train the model
     # Create two separate TensorFlow sessions
-    sess_1 = tf.InteractiveSession()
+    sess_1 = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     if multiplayer:
-        sess_2 = tf.InteractiveSession()
+        sess_2 = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     else:
         # set session 2 to None if it's not being used
         sess_2 = None
@@ -351,11 +357,13 @@ def learn(env,
 
         # my format may restrict things to working properly only when a Player 1 model is loaded into session 1, and same for Player 2
         # however, in practice, the models won't work properly otherwise
-        elif multiplayer and load_path_1 is not None and load_path_2 is not None:
-            load_variables(load_path_1, sess_1, "deepq_1")
-            logger.log('Loaded model 1 from {}'.format(load_path_1))
-            load_variables(load_path_2, sess_2, "deepq_2")
-            logger.log('Loaded model 2 from {}'.format(load_path_2))
+        elif multiplayer:
+            if load_path_1 is not None:
+                load_variables(load_path_1, sess_1, "deepq_1")
+                logger.log('Loaded model 1 from {}'.format(load_path_1))
+            if load_path_2 is not None:
+                load_variables(load_path_2, sess_2, "deepq_2")
+                logger.log('Loaded model 2 from {}'.format(load_path_2))
         
         # actual training starts here
         for t in range(total_timesteps):
@@ -407,7 +415,7 @@ def learn(env,
                 # manually clip the rewards using the sign function
                 rew_1 = np.sign(rew_1)
                 rew_2 = np.sign(rew_2)
-                combo_factor = 0.25
+                combo_factor = 0.75
                 rew_1_combo = rew_1 + combo_factor*rew_2
                 rew_2_combo = rew_2 + combo_factor*rew_1
                 rew_1 = rew_1_combo

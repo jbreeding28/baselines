@@ -3,11 +3,11 @@ import re
 import multiprocessing
 import os.path as osp
 import gym
+import gc
 from collections import defaultdict
 import tensorflow as tf
 import numpy as np
 import datetime
-import time
 import matplotlib.pyplot as plt
 
 from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
@@ -241,24 +241,37 @@ def main(args):
     else:
         rank = MPI.COMM_WORLD.Get_rank()
         configure_logger(args.log_path, format_strs=[])
+
     # return two models, two sessions, and the environment type
     # if there's only a single model being trained, model_2 and sess_2 are None
     model_1, model_2, sess_1, sess_2, env = train(args, extra_args)
     # figure out if it's a multiplayer session
     # multiplayer stuff is left entirely up to the user
     multiplayer = args.multiplayer
-    if args.save_path is not None and rank == 0 and args.save_interval == 0:
-        # if two models were made, save them both with suffixes
-        if multiplayer:
-            save_path_1 = osp.expanduser(args.save_path + "_player1")
-            # I needed the sessions to properly save the models here
-            # the variables are specifically linked to the sessions
-            model_1.save(save_path_1, sess_1, "deepq_1")
-            save_path_2 = osp.expanduser(args.save_path + "_player2")
-            model_2.save(save_path_2, sess_2, "deepq_2")
+    if args.save_path is not None and rank == 0:
+        if args.save_interval != 0:
+            # if two models were made, save them both with suffixes
+            if multiplayer:
+                save_path_1 = osp.expanduser(args.save_path + "/player1_final")
+                # I needed the sessions to properly save the models here
+                # the variables are specifically linked to the sessions
+                model_1.save(save_path_1, sess_1, "deepq_1")
+                save_path_2 = osp.expanduser(args.save_path + "/player2_final")
+                model_2.save(save_path_2, sess_2, "deepq_2")
+            else:
+                save_path = osp.expanduser(args.save_path + "/final")
+                model_1.save(save_path, sess_1, "deepq_1")
         else:
-            save_path = osp.expanduser(args.save_path)
-            model_1.save(save_path, sess_1, "deepq_1")
+            if multiplayer:
+                save_path_1 = osp.expanduser(args.save_path + "_player1")
+                # I needed the sessions to properly save the models here
+                # the variables are specifically linked to the sessions
+                model_1.save(save_path_1, sess_1, "deepq_1")
+                save_path_2 = osp.expanduser(args.save_path + "_player2")
+                model_2.save(save_path_2, sess_2, "deepq_2")
+            else:
+                save_path = osp.expanduser(args.save_path)
+                model_1.save(save_path, sess_1, "deepq_1")
     # play a number of games to evaluate the network
     if args.play:
         logger.log("Running trained model")
@@ -434,8 +447,9 @@ def main(args):
                 break
         # END MY CODE
     env.close()
-    # writer = tf.summary.FileWriter("./graphs", sess_1.graph)
-    # writer = tf.summary.FileWriter("./graphs", sess_2.graph)
+    sess_1.close()
+    if multiplayer:
+        sess_2.close()
     return model_1, model_2
 
 if __name__ == '__main__':
