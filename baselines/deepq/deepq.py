@@ -201,18 +201,17 @@ def learn(env,
     isSpaceInvaders = False
     if "SpaceInvaders" in str(env):
         isSpaceInvaders = True
-    interval_count=1
+    interval_count=0
 
 
     # put a limit on the amount of memory used, otherwise TensorFlow will consume nearly everything
     # this leaves 1 GB free on my computer, others may need to change it
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.65)
 
     # Create all the functions necessary to train the model
     # Create two separate TensorFlow sessions
-    sess_1 = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+    sess_1 = tf.Session()
     if multiplayer:
-        sess_2 = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+        sess_2 = tf.Session()
     else:
         # set session 2 to None if it's not being used
         sess_2 = None
@@ -364,6 +363,31 @@ def learn(env,
             if load_path_2 is not None:
                 load_variables(load_path_2, sess_2, "deepq_2")
                 logger.log('Loaded model 2 from {}'.format(load_path_2))
+
+
+        if save_interval is not None and save_path is not None:
+                if multiplayer:
+                    if model_saved_1 and model_saved_2:
+                        save_variables(temp_file_1, sess_1, "deepq_1")
+                        save_variables(temp_file_2, sess_2, "deepq_2")
+                        load_variables(model_file_1, sess_1, "deepq_1")
+                        load_variables(model_file_2, sess_2, "deepq_2")
+                    save_path_1 = osp.expanduser(save_path + "/stage" + str(interval_count) + "_player1")
+                    save_path_2 = osp.expanduser(save_path + "/stage" + str(interval_count) + "_player2")
+                    act_1.save(save_path_1, sess_1, "deepq_1")
+                    act_2.save(save_path_2, sess_2, "deepq_2")
+                    if model_saved_1 and model_saved_2:
+                        load_variables(temp_file_1, sess_1, "deepq_1")
+                        load_variables(temp_file_2, sess_2, "deepq_2")
+                else:
+                    if model_saved_1:
+                        save_variables(temp_file_1, sess_1, "deepq_1")
+                        load_variables(model_file_1, sess_1, "deepq_1")
+                    save_path_solo = osp.expanduser(save_path + "/stage" + str(interval_count))
+                    act_1.save(save_path_solo, sess_1, "deepq_1")
+                    if model_saved_1:
+                        load_variables(temp_file_1, sess_1, "deepq_1")
+                interval_count = interval_count + 1
         
         # actual training starts here
         for t in range(total_timesteps):
@@ -415,7 +439,7 @@ def learn(env,
                 # manually clip the rewards using the sign function
                 rew_1 = np.sign(rew_1)
                 rew_2 = np.sign(rew_2)
-                combo_factor = 0.75
+                combo_factor = 0.25
                 rew_1_combo = rew_1 + combo_factor*rew_2
                 rew_2_combo = rew_2 + combo_factor*rew_1
                 rew_1 = rew_1_combo
