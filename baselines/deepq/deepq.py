@@ -540,20 +540,29 @@ def learn(env,
                     model_saved_2 = True
                     saved_mean_reward_2 = mean_100ep_reward_2
 
+            # Periodically save the models
+            # do this only if the save inter
             if save_interval is not None and actual_t % save_interval == 0 and save_path is not None:
+                # Check if it's a multiplayer game
                 if multiplayer:
+                    # if some "best version" of the models have been saved before, then load them
                     if model_saved_1 and model_saved_2:
+                        # save the current models into temporary files
                         save_variables(temp_file_1, sess_1, "deepq_1")
                         save_variables(temp_file_2, sess_2, "deepq_2")
+                        # load the best models in for a second
                         load_variables(model_file_1, sess_1, "deepq_1")
                         load_variables(model_file_2, sess_2, "deepq_2")
+                    # save the models to files
                     save_path_1 = osp.expanduser(save_path + "/stage" + str(interval_count) + "_player1")
                     save_path_2 = osp.expanduser(save_path + "/stage" + str(interval_count) + "_player2")
                     act_1.save(save_path_1, sess_1, "deepq_1")
                     act_2.save(save_path_2, sess_2, "deepq_2")
+                    # load the models from the temporary files back in
                     if model_saved_1 and model_saved_2:
                         load_variables(temp_file_1, sess_1, "deepq_1")
                         load_variables(temp_file_2, sess_2, "deepq_2")
+                # same process for single-player
                 else:
                     if model_saved_1:
                         save_variables(temp_file_1, sess_1, "deepq_1")
@@ -562,6 +571,7 @@ def learn(env,
                     act_1.save(save_path_solo, sess_1, "deepq_1")
                     if model_saved_1:
                         load_variables(temp_file_1, sess_1, "deepq_1")
+                # add one to the interval count to change the name for saving in the next stage
                 interval_count = interval_count + 1
 
         # restore models at the end to the best performers
