@@ -89,9 +89,10 @@ def initialize(sess):
     """Initialize all the uninitialized variables in the global scope."""
     new_variables = set(tf.global_variables()) - ALREADY_INITIALIZED
     # had to explicitly initialize global variables, otherwise I got errors
-    sess.run(tf.global_variables_initializer())
-    sess.run(tf.variables_initializer(new_variables))
-    ALREADY_INITIALIZED.update(new_variables)
+    with sess.graph.as_default():
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.variables_initializer(new_variables))
+        ALREADY_INITIALIZED.update(new_variables)
 
 # ================================================================
 # Model components
@@ -187,37 +188,40 @@ class _Function(object):
     def __init__(self, sess, inputs, outputs, updates, givens):
         # save the session as a parameter
         self.sess = sess
-        for inpt in inputs:
-            if not hasattr(inpt, 'make_feed_dict') and not (type(inpt) is tf.Tensor and len(inpt.op.inputs) == 0):
-                assert False, "inputs should all be placeholders, constants, or have a make_feed_dict method"
-        self.inputs = inputs
-        self.input_names = {inp.name.split("/")[-1].split(":")[0]: inp for inp in inputs}
-        updates = updates or []
-        self.update_group = tf.group(*updates)
-        self.outputs_update = list(outputs) + [self.update_group]
-        self.givens = {} if givens is None else givens
+        with self.sess.graph.as_default():
+            for inpt in inputs:
+                if not hasattr(inpt, 'make_feed_dict') and not (type(inpt) is tf.Tensor and len(inpt.op.inputs) == 0):
+                    assert False, "inputs should all be placeholders, constants, or have a make_feed_dict method"
+            self.inputs = inputs
+            self.input_names = {inp.name.split("/")[-1].split(":")[0]: inp for inp in inputs}
+            updates = updates or []
+            self.update_group = tf.group(*updates)
+            self.outputs_update = list(outputs) + [self.update_group]
+            self.givens = {} if givens is None else givens
 
     def _feed_input(self, feed_dict, inpt, value):
-        if hasattr(inpt, 'make_feed_dict'):
-            feed_dict.update(inpt.make_feed_dict(value))
-        else:
-            feed_dict[inpt] = adjust_shape(inpt, value)
+        with self.sess.graph.as_default():
+            if hasattr(inpt, 'make_feed_dict'):
+                feed_dict.update(inpt.make_feed_dict(value))
+            else:
+                feed_dict[inpt] = adjust_shape(inpt, value)
 
     def __call__(self, *args, **kwargs):
-        assert len(args) + len(kwargs) <= len(self.inputs), "Too many arguments provided"
-        feed_dict = {}
-        # Update feed dict with givens.
-        for inpt in self.givens:
-            feed_dict[inpt] = adjust_shape(inpt, feed_dict.get(inpt, self.givens[inpt]))
-        # Update the args
-        for inpt, value in zip(self.inputs, args):
-            self._feed_input(feed_dict, inpt, value)
-        for inpt_name, value in kwargs.items():
-            self._feed_input(feed_dict, self.input_names[inpt_name], value)
-        # This is why the session is passed in
-        # so I can run the update function in the correct session easily
-        results = self.sess.run(self.outputs_update, feed_dict=feed_dict)[:-1]
-        return results
+        with self.sess.graph.as_default():
+            assert len(args) + len(kwargs) <= len(self.inputs), "Too many arguments provided"
+            feed_dict = {}
+            # Update feed dict with givens.
+            for inpt in self.givens:
+                feed_dict[inpt] = adjust_shape(inpt, feed_dict.get(inpt, self.givens[inpt]))
+            # Update the args
+            for inpt, value in zip(self.inputs, args):
+                self._feed_input(feed_dict, inpt, value)
+            for inpt_name, value in kwargs.items():
+                self._feed_input(feed_dict, self.input_names[inpt_name], value)
+            # This is why the session is passed in
+            # so I can run the update function in the correct session easily
+            results = self.sess.run(self.outputs_update, feed_dict=feed_dict)[:-1]
+            return results
 
 # ================================================================
 # Flat vectors
@@ -350,33 +354,36 @@ def save_state(fname, sess=None):
 # The methods above and below are clearly doing the same thing, and in a rather similar way
 # TODO: ensure there is no subtle differences and remove one
 
-def save_variables(save_path, sess, scope):
-    # pass in session
-    import joblib
-    variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-    # run the session
-    ps = sess.run(variables)
-    save_dict = {v.name: value for v, value in zip(variables, ps)}
-    dirname = os.path.dirname(save_path)
-    if any(dirname):
-        os.makedirs(dirname, exist_ok=True)
-    joblib.dump(save_dict, save_path)
+def save_variables(save_path, sess):
 
-def load_variables(load_path, sess, scope):
-    # pass in session
-    import joblib
-    variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-    loaded_params = joblib.load(os.path.expanduser(load_path))
-    restores = []
-    if isinstance(loaded_params, list):
-        assert len(loaded_params) == len(variables), 'number of variables loaded mismatches len(variables)'
-        for d, v in zip(loaded_params, variables):
-            restores.append(v.assign(d))
-    else:
-        for v in variables:
-            restores.append(v.assign(loaded_params[v.name]))
-    # run the specific session here
-    sess.run(restores)
+    with sess.graph.as_default():
+        # pass in session
+        import joblib
+        variables = sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        # run the session
+        ps = sess.run(variables)
+        save_dict = {v.name: value for v, value in zip(variables, ps)}
+        dirname = os.path.dirname(save_path)
+        if any(dirname):
+            os.makedirs(dirname, exist_ok=True)
+        joblib.dump(save_dict, save_path)
+
+def load_variables(load_path, sess):
+    with sess.graph.as_default():
+        # pass in session
+        import joblib
+        variables = sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        loaded_params = joblib.load(os.path.expanduser(load_path))
+        restores = []
+        if isinstance(loaded_params, list):
+            assert len(loaded_params) == len(variables), 'number of variables loaded mismatches len(variables)'
+            for d, v in zip(loaded_params, variables):
+                restores.append(v.assign(d))
+        else:
+            for v in variables:
+                restores.append(v.assign(loaded_params[v.name]))
+        # run the specific session here
+        sess.run(restores)
 
 # ================================================================
 # Shape adjustment for feeding into tf placeholders

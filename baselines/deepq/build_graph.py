@@ -143,7 +143,7 @@ def default_param_noise_filter(var):
     return False
 
 
-def build_act(make_obs_ph, q_func, num_actions, sess, suffix, scope="deepq", reuse=None):
+def build_act(make_obs_ph, q_func, num_actions, sess, scope="deepq", reuse=None):
     """Creates the act function:
 
     Parameters
@@ -180,13 +180,13 @@ def build_act(make_obs_ph, q_func, num_actions, sess, suffix, scope="deepq", reu
         # there are variables underneath these that don't have the suffixes
         # because it's treated like a tree though, and they're underneath ones with suffixes, they're treated as different
         # it's like having two files named the same in different folders
-        observations_ph = make_obs_ph("observation"+suffix)
-        stochastic_ph = tf.placeholder(tf.bool, (), name="stochastic"+suffix)
-        update_eps_ph = tf.placeholder(tf.float32, (), name="update_eps"+suffix)
+        observations_ph = make_obs_ph("observation")
+        stochastic_ph = tf.placeholder(tf.bool, (), name="stochastic")
+        update_eps_ph = tf.placeholder(tf.float32, (), name="update_eps")
 
-        eps = tf.get_variable("eps"+suffix, (), initializer=tf.constant_initializer(0))
+        eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
 
-        q_values = q_func(observations_ph.get(), num_actions, scope="q_func"+suffix)
+        q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
         deterministic_actions = tf.argmax(q_values, axis=1)
 
         batch_size = tf.shape(observations_ph.get())[0]
@@ -206,7 +206,7 @@ def build_act(make_obs_ph, q_func, num_actions, sess, suffix, scope="deepq", reu
         return act
 
 
-def build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, suffix, scope="deepq", reuse=None, param_noise_filter_func=None):
+def build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, scope="deepq", reuse=None, param_noise_filter_func=None):
     """Creates the act function with support for parameter space noise exploration (https://arxiv.org/abs/1706.01905):
 
     Parameters
@@ -249,23 +249,23 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, suffix, s
         # there are variables underneath these that don't have the suffixes
         # because it's treated like a tree though, and they're underneath ones with suffixes, they're treated as different
         # it's like having two files named the same in different folders
-        observations_ph = make_obs_ph("observation"+suffix)
-        stochastic_ph = tf.placeholder(tf.bool, (), name="stochastic"+suffix)
-        update_eps_ph = tf.placeholder(tf.float32, (), name="update_eps"+suffix)
-        update_param_noise_threshold_ph = tf.placeholder(tf.float32, (), name="update_param_noise_threshold"+suffix)
-        update_param_noise_scale_ph = tf.placeholder(tf.bool, (), name="update_param_noise_scale"+suffix)
-        reset_ph = tf.placeholder(tf.bool, (), name="reset"+suffix)
+        observations_ph = make_obs_ph("observation")
+        stochastic_ph = tf.placeholder(tf.bool, (), name="stochastic")
+        update_eps_ph = tf.placeholder(tf.float32, (), name="update_eps")
+        update_param_noise_threshold_ph = tf.placeholder(tf.float32, (), name="update_param_noise_threshold")
+        update_param_noise_scale_ph = tf.placeholder(tf.bool, (), name="update_param_noise_scale")
+        reset_ph = tf.placeholder(tf.bool, (), name="reset")
 
         eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
-        param_noise_scale = tf.get_variable("param_noise_scale"+suffix, (), initializer=tf.constant_initializer(0.01), trainable=False)
-        param_noise_threshold = tf.get_variable("param_noise_threshold"+suffix, (), initializer=tf.constant_initializer(0.05), trainable=False)
+        param_noise_scale = tf.get_variable("param_noise_scale", (), initializer=tf.constant_initializer(0.01), trainable=False)
+        param_noise_threshold = tf.get_variable("param_noise_threshold", (), initializer=tf.constant_initializer(0.05), trainable=False)
 
         # Unmodified Q.
         # q function has a suffix too
-        q_values = q_func(observations_ph.get(), num_actions, scope="q_func"+suffix)
+        q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
 
         # Perturbable Q used for the actual rollout.
-        q_values_perturbed = q_func(observations_ph.get(), num_actions, scope="perturbed_q_func"+suffix)
+        q_values_perturbed = q_func(observations_ph.get(), num_actions, scope="perturbed_q_func")
         # We have to wrap this code into a function due to the way tf.cond() works. See
         # https://stackoverflow.com/questions/37063952/confused-by-the-behavior-of-tf-cond for
         # a more detailed discussion.
@@ -288,8 +288,8 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, suffix, s
         # Set up functionality to re-compute `param_noise_scale`. This perturbs yet another copy
         # of the network and measures the effect of that perturbation in action space. If the perturbation
         # is too big, reduce scale of perturbation, otherwise increase.
-        q_values_adaptive = q_func(observations_ph.get(), num_actions, scope="adaptive_q_func"+suffix)
-        perturb_for_adaption = perturb_vars(original_scope="q_func"+suffix, perturbed_scope="adaptive_q_func"+suffix)
+        q_values_adaptive = q_func(observations_ph.get(), num_actions, scope="adaptive_q_func")
+        perturb_for_adaption = perturb_vars(original_scope="q_func", perturbed_scope="adaptive_q_func")
         kl = tf.reduce_sum(tf.nn.softmax(q_values) * (tf.log(tf.nn.softmax(q_values)) - tf.log(tf.nn.softmax(q_values_adaptive))), axis=-1)
         mean_kl = tf.reduce_mean(kl)
         def update_scale():
@@ -315,7 +315,7 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, suffix, s
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
         updates = [
             update_eps_expr,
-            tf.cond(reset_ph, lambda: perturb_vars(original_scope="q_func"+suffix, perturbed_scope="perturbed_q_func"+suffix), lambda: tf.group(*[])),
+            tf.cond(reset_ph, lambda: perturb_vars(original_scope="q_func", perturbed_scope="perturbed_q_func"), lambda: tf.group(*[])),
             tf.cond(update_param_noise_scale_ph, lambda: update_scale(), lambda: tf.Variable(0., trainable=False)),
             update_param_noise_threshold_expr,
         ]
@@ -328,7 +328,7 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, suffix, s
         return act
 
 
-def build_train(sess, suffix, make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
+def build_train(sess, make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
     double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
     """Creates the train function:
 
@@ -386,82 +386,84 @@ def build_train(sess, suffix, make_obs_ph, q_func, num_actions, optimizer, grad_
     # adding these suffixes to scope names is crucial to separate the variables between sessions, otherwise there will be problems with sessions trying to share variables
     # Add the suffix to the main scope. It may have been simpler just to change that instead of changing everything. But when I was working on it, it made more sense to explicitly state that each session's separate variables (reward, q function, weights, etc) were specifically and differently named
     # What I did appears to work, so I will just leave it as is and not change it unless problems crop up
-    if param_noise:
-        act_f = build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, suffix, scope=scope, reuse=reuse,
-            param_noise_filter_func=param_noise_filter_func)
-    else:
-        act_f = build_act(make_obs_ph, q_func, num_actions, sess, suffix, scope=scope, reuse=reuse)
 
-    with tf.variable_scope(scope, reuse=reuse):
-        # set up placeholders
-        # stick suffixes
-        obs_t_input = make_obs_ph("obs_t"+suffix)
-        act_t_ph = tf.placeholder(tf.int32, [None], name="action"+suffix)
-        rew_t_ph = tf.placeholder(tf.float32, [None], name="reward"+suffix)
-        obs_tp1_input = make_obs_ph("obs_tp1"+suffix)
-        done_mask_ph = tf.placeholder(tf.float32, [None], name="done"+suffix)
-        importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight"+suffix)
-        # q network evaluation
-        q_t = q_func(obs_t_input.get(), num_actions, scope="q_func"+suffix, reuse=True)  # reuse parameters from act
-        q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func"+suffix)
+    with sess.graph.as_default(): 
+        if param_noise:
+            act_f = build_act_with_param_noise(make_obs_ph, q_func, num_actions, sess, scope=scope, reuse=reuse,
+                param_noise_filter_func=param_noise_filter_func)
+        else:
+            act_f = build_act(make_obs_ph, q_func, num_actions, sess, scope=scope, reuse=reuse)
 
-        # target q network evalution
-        q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func"+suffix)
-        target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func"+suffix)
+        with tf.variable_scope(scope, reuse=reuse):
+            # set up placeholders
+            # stick suffixes
+            obs_t_input = make_obs_ph("obs_t")
+            act_t_ph = tf.placeholder(tf.int32, [None], name="action")
+            rew_t_ph = tf.placeholder(tf.float32, [None], name="reward")
+            obs_tp1_input = make_obs_ph("obs_tp1")
+            done_mask_ph = tf.placeholder(tf.float32, [None], name="done")
+            importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
+            # q network evaluation
+            q_t = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
+            q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
+
+            # target q network evalution
+            q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
+            target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
         # q scores for actions which we know were selected in the given state.
-        q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
+            q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
 
         # compute estimate of best possible value starting from state at t + 1
-        if double_q:
-            q_tp1_using_online_net = q_func(obs_tp1_input.get(), num_actions, scope="q_func"+suffix, reuse=True)
-            q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
-            q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
-        else:
-            q_tp1_best = tf.reduce_max(q_tp1, 1)
-        q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
+            if double_q:
+                q_tp1_using_online_net = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
+                q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
+                q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
+            else:
+                q_tp1_best = tf.reduce_max(q_tp1, 1)
+            q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
 
-        # compute RHS of bellman equation
-        q_t_selected_target = rew_t_ph + gamma * q_tp1_best_masked
+            # compute RHS of bellman equation
+            q_t_selected_target = rew_t_ph + gamma * q_tp1_best_masked
 
-        # compute the error (potentially clipped)
-        td_error = q_t_selected - tf.stop_gradient(q_t_selected_target)
-        errors = U.huber_loss(td_error)
-        weighted_error = tf.reduce_mean(importance_weights_ph * errors)
-        # compute optimization op (potentially with gradient clipping)
-        if grad_norm_clipping is not None:
-            gradients = optimizer.compute_gradients(weighted_error, var_list=q_func_vars)
-            for i, (grad, var) in enumerate(gradients):
-                if grad is not None:
-                    gradients[i] = (tf.clip_by_norm(grad, grad_norm_clipping), var)
-            optimize_expr = optimizer.apply_gradients(gradients)
-        else:
-            optimize_expr = optimizer.minimize(weighted_error, var_list=q_func_vars)
+            # compute the error (potentially clipped)
+            td_error = q_t_selected - tf.stop_gradient(q_t_selected_target)
+            errors = U.huber_loss(td_error)
+            weighted_error = tf.reduce_mean(importance_weights_ph * errors)
+            # compute optimization op (potentially with gradient clipping)
+            if grad_norm_clipping is not None:
+                gradients = optimizer.compute_gradients(weighted_error, var_list=q_func_vars)
+                for i, (grad, var) in enumerate(gradients):
+                    if grad is not None:
+                        gradients[i] = (tf.clip_by_norm(grad, grad_norm_clipping), var)
+                optimize_expr = optimizer.apply_gradients(gradients)
+            else:
+                optimize_expr = optimizer.minimize(weighted_error, var_list=q_func_vars)
 
-        # update_target_fn will be called periodically to copy Q network to target Q network
-        update_target_expr = []
-        for var, var_target in zip(sorted(q_func_vars, key=lambda v: v.name),
-                                   sorted(target_q_func_vars, key=lambda v: v.name)):
-            update_target_expr.append(var_target.assign(var))
-        update_target_expr = tf.group(*update_target_expr)
+            # update_target_fn will be called periodically to copy Q network to target Q network
+            update_target_expr = []
+            for var, var_target in zip(sorted(q_func_vars, key=lambda v: v.name),
+                                       sorted(target_q_func_vars, key=lambda v: v.name)):
+                update_target_expr.append(var_target.assign(var))
+            update_target_expr = tf.group(*update_target_expr)
 
-        # Create callable functions
-        # pass the session into the training function
-        train = U.function(
-            sess = sess,
-            inputs=[
-                obs_t_input,
-                act_t_ph,
-                rew_t_ph,
-                obs_tp1_input,
-                done_mask_ph,
-                importance_weights_ph
-            ],
-            outputs=td_error,
-            updates=[optimize_expr]
-        )
-        # pass the session into the update function
-        update_target = U.function(sess, [], [], updates=[update_target_expr])
-        # pass the session into the Q function
-        q_values = U.function(sess, [obs_t_input], q_t)
-        return act_f, train, update_target, q_values
+            # Create callable functions
+            # pass the session into the training function
+            train = U.function(
+                sess = sess,
+                inputs=[
+                    obs_t_input,
+                    act_t_ph,
+                    rew_t_ph,
+                    obs_tp1_input,
+                    done_mask_ph,
+                    importance_weights_ph
+                ],
+                outputs=td_error,
+                updates=[optimize_expr]
+            )
+            # pass the session into the update function
+            update_target = U.function(sess, [], [], updates=[update_target_expr])
+            # pass the session into the Q function
+            q_values = U.function(sess, [obs_t_input], q_t)
+            return act_f, train, update_target, q_values

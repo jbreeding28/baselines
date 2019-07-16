@@ -4,11 +4,14 @@ import multiprocessing
 import os.path as osp
 import gym
 import gc
+import cloudpickle
 from collections import defaultdict
 import tensorflow as tf
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
+import time
+import random
 
 from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
 from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
@@ -64,10 +67,6 @@ def train(args, extra_args):
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
     alg_kwargs.update(extra_args)
-    if args.save_interval == 0:
-        save_interval = None
-    else:
-        save_interval = args.save_interval
     env = build_env(args)
     if args.save_video_interval != 0:
         env = VecVideoRecorder(env, osp.join(logger.get_dir(), "videos"), record_video_trigger=lambda x: x % args.save_video_interval == 0, video_length=args.save_video_length)
@@ -87,7 +86,6 @@ def train(args, extra_args):
         total_timesteps=total_timesteps,
         print_freq=10,
         multiplayer=args.multiplayer,
-        save_interval=save_interval,
         save_path=args.save_path,
         **alg_kwargs
     )
@@ -249,29 +247,16 @@ def main(args):
     # multiplayer stuff is left entirely up to the user
     multiplayer = args.multiplayer
     if args.save_path is not None and rank == 0:
-        if args.save_interval != 0:
-            # if two models were made, save them both with suffixes
-            if multiplayer:
-                save_path_1 = osp.expanduser(args.save_path + "/player1_final")
-                # I needed the sessions to properly save the models here
-                # the variables are specifically linked to the sessions
-                model_1.save(save_path_1, sess_1, "deepq_1")
-                save_path_2 = osp.expanduser(args.save_path + "/player2_final")
-                model_2.save(save_path_2, sess_2, "deepq_2")
-            else:
-                save_path = osp.expanduser(args.save_path + "/final")
-                model_1.save(save_path, sess_1, "deepq_1")
+        if multiplayer:
+            save_path_1 = osp.expanduser(args.save_path + "_player1")
+            # I needed the sessions to properly save the models here
+            # the variables are specifically linked to the sessions
+            model_1.save(save_path_1, sess_1)
+            save_path_2 = osp.expanduser(args.save_path + "_player2")
+            model_2.save(save_path_2, sess_2)
         else:
-            if multiplayer:
-                save_path_1 = osp.expanduser(args.save_path + "_player1")
-                # I needed the sessions to properly save the models here
-                # the variables are specifically linked to the sessions
-                model_1.save(save_path_1, sess_1, "deepq_1")
-                save_path_2 = osp.expanduser(args.save_path + "_player2")
-                model_2.save(save_path_2, sess_2, "deepq_2")
-            else:
-                save_path = osp.expanduser(args.save_path)
-                model_1.save(save_path, sess_1, "deepq_1")
+            save_path = osp.expanduser(args.save_path)
+            model_1.save(save_path, sess_1)
     # play a number of games to evaluate the network
     if args.play:
         logger.log("Running trained model")
@@ -293,6 +278,7 @@ def main(args):
         game_score_1 = 0
         game_score_2 = 0
         total_score = 0
+        games_won = 0
 
         # keep hold of the highest score, initialize to zero
         max_score = 0
@@ -323,6 +309,9 @@ def main(args):
             render_speed = 10
         # calculate the appropriate frame speed
         frame_time = frame_time/render_speed
+
+        computer_view = args.computer_view
+
         # need special code to handle Pong
         # create variable to keep track of whether or not I'm playing Pong
         isPong = False
@@ -377,7 +366,10 @@ def main(args):
             episode_rew_2 += rew_2[0] if isinstance(env, VecEnv) else rew_2
             # render the frame if the user wants it
             if render:
-                env.render()
+                if computer_view:
+                    env.render(frame=obs)
+                else:
+                    env.render()
             done = done.any() if isinstance(done, np.ndarray) else done
             # done is true whenever a reset is necessary
             # occurs on death or game over
@@ -392,6 +384,7 @@ def main(args):
                 game_score_2 += episode_rew_2
                 if isPong:
                     total_score += episode_rew_1
+                    games_won += (episode_rew_1 > 0)
                 else:
                     total_score += episode_rew_1 + episode_rew_2
                 # reset for next go around
@@ -443,10 +436,77 @@ def main(args):
             if game_count == num_games:
                 print(" ")
                 print('average score={}'.format(float(total_score/num_games)))
+                if isPong:
+                    print('win percentage={}'.format(float(games_won * 100/num_games)))
+                else:
+                    print('win percentage={}'.format(float(100)))
                 # break out of this true loop
                 break
         # END MY CODE
     env.close()
+
+    if args.build_state_library:
+        library_path = osp.expanduser(args.library_path + "_state_library")
+        library_size = args.library_size
+        state_library = list()
+        state_buffer = list()
+        logger.log("Building state library")
+        obs = env.reset()
+        state_1 = model_1.initial_state if hasattr(model_1, 'initial_state') else None
+        # copy what the first model is doing if there's multiple models
+        if multiplayer:
+            state_2 = model_2.initial_state if hasattr(model_2, 'initial_state') else None
+        dones = np.zeros((1,))
+
+
+        play_steps = 0
+        while True:
+
+            if state_1 is not None:
+                action_1, _, state_1, _ = model_1.step(obs,S=state_1, M=dones)
+            # duplicate for a second model
+            if multiplayer and state_2 is not None:
+                action_2, _, state_2, _ = model_2.step(obs,S=state_2, M=dones)
+                
+            else:
+                action_1, _, _, _ = model_1.step(obs)
+                # have the second model take an action if appropriate
+                if multiplayer:
+                    action_2, _, _, _ = model_2.step(obs)
+            # take a step forward in the environment, return new observation
+            # return any reward and if the environment needs to be reset
+
+            # pass in both actions if there are two models
+            # reward in this case is the default reward
+            # in competitive multiplayer, this is Player 1's reward
+            if multiplayer:
+                obs, _, _, done, _ = env.step(action_1, action_2)
+            # otherwise, ignore the second 
+            else:
+                obs, _, _, done, _ = env.step(action_1)
+            state_buffer.append(obs)
+            if len(state_buffer) > library_size:
+                state_buffer.pop(0)
+            play_steps += 1
+            done = done.any() if isinstance(done, np.ndarray) else done
+            # done is true whenever a reset is necessary
+            # occurs on death or game over
+            if done:
+                # on game over, this starts a new game
+                # otherwise, continues the game but returns player to initial position
+                obs = env.reset()
+            if play_steps % library_size == 0:
+                sampled_states = random.sample(state_buffer, 100)
+                state_library.extend(sampled_states)
+                logger.record_tabular("library size", library_size)
+                logger.record_tabular("percent complete", round(len(state_library) * 1000/library_size)/10)
+                logger.dump_tabular()
+            if len(state_library) >= library_size:
+                break
+        env.close()
+        library_file = open(library_path,'w+b')
+        cloudpickle.dump(state_library, library_file)
+        library_file.close()
     sess_1.close()
     if multiplayer:
         sess_2.close()

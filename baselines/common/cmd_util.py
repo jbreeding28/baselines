@@ -186,8 +186,11 @@ def common_arg_parser():
     parser.add_argument('--mode', default=1, type=int)
     # multiplayer argument
     parser.add_argument('--multiplayer', default=False, action='store_true')
-    # rate at which to save progress
-    parser.add_argument('--save_interval', default=0, type=int)
+    # computer view argument
+    parser.add_argument('--computer_view', default=False, action='store_true')
+    parser.add_argument('--build_state_library', default=False, action='store_true')
+    parser.add_argument('--library_size', default=10000, type=int)
+    parser.add_argument('--library_path', help='Path to save state library to', default=None, type=str)
     return parser
 
 def robotics_arg_parser():
