@@ -623,6 +623,39 @@ def main(args):
                 for j in range(0,len(model_1_actions)):
                     filewriter.writerow([model_1_actions[j]])
 
+        image_path = osp.expanduser(args.eval_path + "/state_images/")
+        dirname = os.path.dirname(image_path)
+        if any(dirname):
+            os.makedirs(dirname, exist_ok=True)
+        for i in range(1,len(state_library) + 1):
+            image_path = osp.expanduser(args.eval_path + "/state_images/state" + str(i) + ".jpg")
+            img = state_library[i-1].state
+            frame1 = img[0:84,0:84,0]
+            frame2 = img[0:84,0:84,1]
+            frame3 = img[0:84,0:84,2]
+            frame1 = np.reshape(frame1, (84, 84, 1))
+            frame2 = np.reshape(frame2, (84, 84, 1))
+            frame3 = np.reshape(frame3, (84, 84, 1))
+            if "SpaceInvaders" in args.env:
+                frames = [frame1, frame2, frame3]
+            else:
+                frame4 = img[0:84,0:84,3]
+                frame4 = np.reshape(frame4, (84, 84, 1))
+                frames = [frame1, frame2, frame3, frame4]
+            frame = LazyFrames(frames)
+            if "SpaceInvaders" in args.env:
+                img=np.round(0.25*frame._frames[0])+np.round(0.5*frame._frames[1])+np.round(frame._frames[2])
+            else:
+                img=np.round(0.125*frame._frames[0])+np.round(0.25*frame._frames[1])+np.round(0.5*frame._frames[2])+np.round(frame._frames[3])
+            img = img.astype(np.dtype('u1'))
+            img=np.concatenate((img, img, img),axis=2)
+            height = np.shape(img)[0]
+            width = np.shape(img)[1]
+            size = 4
+            # resize the screen and return it as the image
+            img = cv2.resize(img, (width*size, height*size), interpolation=cv2.INTER_AREA)
+            matplotlib.image.imsave(image_path, img)
+
             
 
     sess_1.close()
