@@ -3,13 +3,10 @@
 # this needs to be in the main folder to work
 
 # variables user can change
-ENV_NAME=PongNoFrameskip-v4
+ENV_NAME=SpaceInvadersNoFrameskip-v4
 MULTIPLAYER_TRAIN=false
-MULTIPLAYER_PLAY=false
 TRAIN_MODE=1
-PLAY_MODE=1
-NUM_GAMES=200
-SAVE_PATH=~/models/Pong_computer_performance_1m_scratch
+SAVE_PATH=~/models/SpaceInvaders_solo_scratch
 # leave these blank if you don't want to load in a starting point
 LOAD_PATH_TRAIN_1=
 LOAD_PATH_TRAIN_2=
@@ -26,9 +23,6 @@ NUM_TIMES=$((NUM_STEPS / SAVE_INTERVAL))
 COMPLETED_TIMESTEPS=0
 
 # specify extensions for logged files
-GAME_LOG=/games.txt
-SCORE_TEXT_NAME=/scores.txt
-SCORE_CSV_NAME=/scores.csv
 SETTINGS_NAME=/settings.txt
 # create full paths
 SCORE_TEXT_PATH=$SAVE_PATH$SCORE_TEXT_NAME
@@ -52,7 +46,6 @@ echo "Training mode: $TRAIN_MODE" >> "$SETTINGS_PATH"
 echo "Playing mode: $PLAY_MODE" >> "$SETTINGS_PATH"
 echo "Full training steps: $NUM_STEPS" >> "$SETTINGS_PATH"
 echo "Pause training interval: $SAVE_INTERVAL" >> "$SETTINGS_PATH"
-echo "Number of games every pause: $NUM_GAMES" >> "$SETTINGS_PATH"
 
 # create arrays to hold average scores and steps completed
 declare -a SCORES
@@ -119,85 +112,16 @@ do
             fi
         fi
     fi
-
-
-
-
-    # multiplayer stuff, loads the games with two players
-    if ($MULTIPLAYER_PLAY)
-    then
-        # load the models and play the number of games, grab the terminal output and post it in a temporary file
-        (python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=0 --multiplayer --mode=$PLAY_MODE --load_path_1=$LOAD_PATH_1 --load_path_2=$LOAD_PATH_2 --play --num_games=$NUM_GAMES) | tee "$GAMES_PATH"
-
-        # grab the temporary file and load it into a variable
-        OUTPUT=`cat $GAMES_PATH`
-        #specific keyword at the end usually in the terminal output to show average score
-        AVERAGE_KEYWORD="average score="
-        WIN_KEYWORD=" win percentage="
-        SCORE_FULL=$(echo $OUTPUT | grep -oP "$AVERAGE_KEYWORD\K.*")
-        WIN_PERCENT_FULL=$(echo $OUTPUT | grep -oP "$WIN_KEYWORD.*")
-        SCORE_LEN=$(( ${#SCORE_FULL}-${#WIN_PERCENT_FULL} ))
-        WIN_PERCENT=$(echo $OUTPUT | grep -oP "$WIN_KEYWORD\K.*")
-        SCORE=${SCORE_FULL:0:$SCORE_LEN}
-        SCORES[i]=$SCORE
-        WINS[i]=$WIN_PERCENT
-        # delete the temporary file
-        rm $GAMES_PATH
-    # single-player code
-    else
-        # load a multiplayer agent in to play in single-player if set up that way
-        if ($MULTIPLAYER_TRAIN)
-        then
-            (python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=0 --mode=$PLAY_MODE --load_path=$LOAD_PATH_1 --play --num_games=$NUM_GAMES) | tee "$GAMES_PATH"
-        else
-            (python3 -m baselines.run --alg=deepq --env=$ENV_NAME --num_timesteps=0 --mode=$PLAY_MODE --load_path=$LOAD_PATH --play --num_games=$NUM_GAMES) | tee "$GAMES_PATH"
-        fi
-        # get output and extract average score
-        OUTPUT=`cat $GAMES_PATH`
-        AVERAGE_KEYWORD="average score="
-        WIN_KEYWORD=" win percentage="
-        SCORE_FULL=$(echo $OUTPUT | grep -oP "$AVERAGE_KEYWORD\K.*")
-        WIN_PERCENT_FULL=$(echo $OUTPUT | grep -oP "$WIN_KEYWORD.*")
-        SCORE_LEN=$(( ${#SCORE_FULL}-${#WIN_PERCENT_FULL} ))
-        WIN_PERCENT=$(echo $OUTPUT | grep -oP "$WIN_KEYWORD\K.*")
-        SCORE=${SCORE_FULL:0:$SCORE_LEN}
-        SCORES[i]=$SCORE
-        WINS[i]=$WIN_PERCENT
-        # delete temp file
-        rm $GAMES_PATH
-    fi
-    # add to array
-    STEPS[i]=$COMPLETED_TIMESTEPS
-    # increment number of timesteps
     COMPLETED_TIMESTEPS=$((COMPLETED_TIMESTEPS + SAVE_INTERVAL))
 
 
 done
 # end of main loop
 
-# create txt and csv files
-touch $SCORE_TEXT_PATH
-touch $SCORE_CSV_PATH
-
-# log the scores and number of steps to a text file, separated by a semicolon
-for (( j=0; j<"${#SCORES[@]}"; j++ )) 
-do
-    echo -n "${STEPS[j]}" >> "$SCORE_TEXT_PATH"
-    echo -n ";" >> "$SCORE_TEXT_PATH"
-    echo -n "${SCORES[j]}" >> "$SCORE_TEXT_PATH"
-    echo -n ";" >> "$SCORE_TEXT_PATH"
-    echo "${WINS[j]}" >> "$SCORE_TEXT_PATH"
-done
-# convert the text file to a csv file
-(echo "Steps;AvgScore;WinPct" ; cat "$SCORE_TEXT_PATH") | sed 's/;/,/g' > "$SCORE_CSV_PATH"
-# delete text file since it's no longer needed
-rm $SCORE_TEXT_PATH
-# give completion message
 echo ""
 echo ""
 echo "Script complete"
 echo ""
 echo ""
 # close virtual environment and end script
-
 deactivate

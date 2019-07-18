@@ -189,8 +189,9 @@ def common_arg_parser():
     # computer view argument
     parser.add_argument('--computer_view', default=False, action='store_true')
     parser.add_argument('--build_state_library', default=False, action='store_true')
-    parser.add_argument('--library_size', default=1000, type=int)
     parser.add_argument('--library_path', help='Path to save state library to', default=None, type=str)
+    parser.add_argument('--evaluate_states', default=False, action='store_true')
+    parser.add_argument('--eval_path', help='Path to save action evaluation to', default=None, type=str)
     return parser
 
 def robotics_arg_parser():

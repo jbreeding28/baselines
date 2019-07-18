@@ -17,6 +17,7 @@ import cv2
 cv2.ocl.setUseOpenCL(False)
 from baselines.common.atari_wrappers import *
 import matplotlib
+import csv
 
 from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
 from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
@@ -452,9 +453,8 @@ def main(args):
 
     if args.build_state_library:
         library_path = osp.expanduser(args.library_path + "/state_library")
-        library_size = args.library_size
+        action_path = osp.expanduser(args.library_path + "/actions.csv")
         state_library = list()
-        state_buffer = list()
         logger.log("Building state library")
         obs = env.reset()
         state_1 = model_1.initial_state if hasattr(model_1, 'initial_state') else None
@@ -462,11 +462,14 @@ def main(args):
         if multiplayer:
             state_2 = model_2.initial_state if hasattr(model_2, 'initial_state') else None
         dones = np.zeros((1,))
-
-
-        play_steps = 0
+        isPong = False
+        if "Pong" in args.env:
+            isPong = True
+        model_1_actions = list()
+        if multiplayer:
+            model_2_actions = list()
         while True:
-
+            state_library.append(StateWrapper(obs))
             if state_1 is not None:
                 action_1, _, state_1, _ = model_1.step(obs,S=state_1, M=dones)
             # duplicate for a second model
@@ -480,7 +483,9 @@ def main(args):
                     action_2, _, _, _ = model_2.step(obs)
             # take a step forward in the environment, return new observation
             # return any reward and if the environment needs to be reset
-
+            model_1_actions.append(action_1[0])
+            if multiplayer:
+                model_2_actions.append(action_2[0])
             # pass in both actions if there are two models
             # reward in this case is the default reward
             # in competitive multiplayer, this is Player 1's reward
@@ -489,49 +494,56 @@ def main(args):
             # otherwise, ignore the second 
             else:
                 obs, _, _, done, _ = env.step(action_1)
-            state_buffer.append(StateWrapper(obs))
-            len(state_buffer)
-            if len(state_buffer) > library_size:
-                state_buffer.pop(0)
-            play_steps += 1
+            lives = env.getLives()
             done = done.any() if isinstance(done, np.ndarray) else done
             # done is true whenever a reset is necessary
             # occurs on death or game over
             if done:
-                # on game over, this starts a new game
-                # otherwise, continues the game but returns player to initial position
-                obs = env.reset()
-            if play_steps % library_size == 0:
-                sampled_states = random.sample(state_buffer, 100)
-                state_library.extend(sampled_states)
-                logger.record_tabular("library size", library_size)
-                logger.record_tabular("percent complete", round(len(state_library) * 1000/library_size)/10)
-                logger.dump_tabular()
-            if len(state_library) >= library_size:
-                break
-        env.close() 
+                # Pong only uses done on game over, so make the episode reward the game score
+                if isPong:
+                    break
+                # if it's not Pong, just do what I did before
+                elif lives == 0:
+                    break
+                else:
+                    obs = env.reset()
+        env.close()
         dirname = os.path.dirname(library_path)
         if any(dirname):
             os.makedirs(dirname, exist_ok=True)
         library_file = open(library_path,'w+b')
         cloudpickle.dump(state_library, library_file)
         library_file.close()
+
+        action_file = open(action_path,'w+')
+        with action_file as csv_scores:
+            filewriter = csv.writer(csv_scores, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            if multiplayer:
+                for j in range(0,len(model_1_actions)):
+                    filewriter.writerow([model_1_actions[j], model_2_actions[j]])
+            else:
+                for j in range(0,len(model_1_actions)):
+                    filewriter.writerow([model_1_actions[j]])
+
         image_path = osp.expanduser(args.library_path + "/state_images/")
         dirname = os.path.dirname(image_path)
         if any(dirname):
             os.makedirs(dirname, exist_ok=True)
-        for i in range(1,library_size + 1):
+        for i in range(1,len(state_library) + 1):
             image_path = osp.expanduser(args.library_path + "/state_images/state" + str(i) + ".jpg")
             img = state_library[i-1].state
             frame1 = img[0:84,0:84,0]
             frame2 = img[0:84,0:84,1]
             frame3 = img[0:84,0:84,2]
-            frame4 = img[0:84,0:84,3]
             frame1 = np.reshape(frame1, (84, 84, 1))
             frame2 = np.reshape(frame2, (84, 84, 1))
             frame3 = np.reshape(frame3, (84, 84, 1))
-            frame4 = np.reshape(frame4, (84, 84, 1))
-            frames = [frame1, frame2, frame3, frame4]
+            if "SpaceInvaders" in args.env:
+                frames = [frame1, frame2, frame3]
+            else:
+                frame4 = img[0:84,0:84,3]
+                frame4 = np.reshape(frame4, (84, 84, 1))
+                frames = [frame1, frame2, frame3, frame4]
             frame = LazyFrames(frames)
             if "SpaceInvaders" in args.env:
                 img=np.round(0.25*frame._frames[0])+np.round(0.5*frame._frames[1])+np.round(frame._frames[2])
@@ -545,6 +557,74 @@ def main(args):
             # resize the screen and return it as the image
             img = cv2.resize(img, (width*size, height*size), interpolation=cv2.INTER_AREA)
             matplotlib.image.imsave(image_path, img)
+
+    if args.evaluate_states:
+        library_path = osp.expanduser(args.library_path + "/state_library")
+        action_load_path = osp.expanduser(args.library_path + "/actions.csv")
+        action_ground_truth_path = osp.expanduser(args.eval_path + "/ground_truth_actions.csv")
+        action_test_path = osp.expanduser(args.eval_path + "/test_actions.csv")
+        loaded_models_path = osp.expanduser(args.eval_path + "/loaded_models.txt")
+        dirname = os.path.dirname(loaded_models_path)
+        if any(dirname):
+            os.makedirs(dirname, exist_ok=True)
+        loaded_models_file = open(loaded_models_path,'w+')
+        loaded_models_file.write(str(extra_args))
+        loaded_models_file.close()
+
+
+        library_file = open(library_path, 'rb')
+        state_library = cloudpickle.load(library_file)
+        library_file.close()
+        model_1_actions = list()
+        if multiplayer:
+            model_2_actions = list()
+        for i in range(1,len(state_library) + 1):
+            # reconstruct the state
+            img = state_library[i-1].state
+            frame1 = img[0:84,0:84,0]
+            frame2 = img[0:84,0:84,1]
+            frame3 = img[0:84,0:84,2]
+            frame1 = np.reshape(frame1, (84, 84, 1))
+            frame2 = np.reshape(frame2, (84, 84, 1))
+            frame3 = np.reshape(frame3, (84, 84, 1))
+            if "SpaceInvaders" in args.env:
+                frames = [frame1, frame2, frame3]
+            else:
+                frame4 = img[0:84,0:84,3]
+                frame4 = np.reshape(frame4, (84, 84, 1))
+                frames = [frame1, frame2, frame3, frame4]
+            obs = LazyFrames(frames)
+            action_1, _, _, _ = model_1.step(obs)
+            model_1_actions.append(action_1[0])
+            if multiplayer:
+                action_2, _, _, _ = model_2.step(obs)
+                model_2_actions.append(action_2[0])
+
+        
+        action_load_file = open(action_load_path, 'r')
+        reader = csv.reader(action_load_file)
+        ground_truth_action_file = open(action_ground_truth_path,'w+')
+        with ground_truth_action_file as csv_scores:
+            filewriter = csv.writer(csv_scores, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            for row in reader:
+                if len(row) == 1:
+                    filewriter.writerow([row[0]])
+                else:
+                    filewriter.writerow([row[0], row[1]])
+
+
+        model_action_file = open(action_test_path,'w+')
+        with model_action_file as csv_scores:
+            filewriter = csv.writer(csv_scores, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            if multiplayer:
+                for j in range(0,len(model_1_actions)):
+                    filewriter.writerow([model_1_actions[j], model_2_actions[j]])
+            else:
+                for j in range(0,len(model_1_actions)):
+                    filewriter.writerow([model_1_actions[j]])
+
+            
+
     sess_1.close()
     if multiplayer:
         sess_2.close()
