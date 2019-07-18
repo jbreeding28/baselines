@@ -189,7 +189,7 @@ def common_arg_parser():
     # computer view argument
     parser.add_argument('--computer_view', default=False, action='store_true')
     parser.add_argument('--build_state_library', default=False, action='store_true')
-    parser.add_argument('--library_size', default=10000, type=int)
+    parser.add_argument('--library_size', default=1000, type=int)
     parser.add_argument('--library_path', help='Path to save state library to', default=None, type=str)
     return parser
 

@@ -1,6 +1,7 @@
 import sys
 import re
 import multiprocessing
+import os
 import os.path as osp
 import gym
 import gc
@@ -12,6 +13,10 @@ import datetime
 import matplotlib.pyplot as plt
 import time
 import random
+import cv2
+cv2.ocl.setUseOpenCL(False)
+from baselines.common.atari_wrappers import *
+import matplotlib
 
 from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
 from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
@@ -446,7 +451,7 @@ def main(args):
     env.close()
 
     if args.build_state_library:
-        library_path = osp.expanduser(args.library_path + "_state_library")
+        library_path = osp.expanduser(args.library_path + "/state_library")
         library_size = args.library_size
         state_library = list()
         state_buffer = list()
@@ -484,7 +489,8 @@ def main(args):
             # otherwise, ignore the second 
             else:
                 obs, _, _, done, _ = env.step(action_1)
-            state_buffer.append(obs)
+            state_buffer.append(StateWrapper(obs))
+            len(state_buffer)
             if len(state_buffer) > library_size:
                 state_buffer.pop(0)
             play_steps += 1
@@ -503,14 +509,51 @@ def main(args):
                 logger.dump_tabular()
             if len(state_library) >= library_size:
                 break
-        env.close()
+        env.close() 
+        dirname = os.path.dirname(library_path)
+        if any(dirname):
+            os.makedirs(dirname, exist_ok=True)
         library_file = open(library_path,'w+b')
         cloudpickle.dump(state_library, library_file)
         library_file.close()
+        image_path = osp.expanduser(args.library_path + "/state_images/")
+        dirname = os.path.dirname(image_path)
+        if any(dirname):
+            os.makedirs(dirname, exist_ok=True)
+        for i in range(1,library_size + 1):
+            image_path = osp.expanduser(args.library_path + "/state_images/state" + str(i) + ".jpg")
+            img = state_library[i-1].state
+            frame1 = img[0:84,0:84,0]
+            frame2 = img[0:84,0:84,1]
+            frame3 = img[0:84,0:84,2]
+            frame4 = img[0:84,0:84,3]
+            frame1 = np.reshape(frame1, (84, 84, 1))
+            frame2 = np.reshape(frame2, (84, 84, 1))
+            frame3 = np.reshape(frame3, (84, 84, 1))
+            frame4 = np.reshape(frame4, (84, 84, 1))
+            frames = [frame1, frame2, frame3, frame4]
+            frame = LazyFrames(frames)
+            if "SpaceInvaders" in args.env:
+                img=np.round(0.25*frame._frames[0])+np.round(0.5*frame._frames[1])+np.round(frame._frames[2])
+            else:
+                img=np.round(0.125*frame._frames[0])+np.round(0.25*frame._frames[1])+np.round(0.5*frame._frames[2])+np.round(frame._frames[3])
+            img = img.astype(np.dtype('u1'))
+            img=np.concatenate((img, img, img),axis=2)
+            height = np.shape(img)[0]
+            width = np.shape(img)[1]
+            size = 4
+            # resize the screen and return it as the image
+            img = cv2.resize(img, (width*size, height*size), interpolation=cv2.INTER_AREA)
+            matplotlib.image.imsave(image_path, img)
     sess_1.close()
     if multiplayer:
         sess_2.close()
     return model_1, model_2
+
+class StateWrapper(object):
+    def __init__(self, obj):
+        self.state = obj
+
 
 if __name__ == '__main__':
     main(sys.argv)

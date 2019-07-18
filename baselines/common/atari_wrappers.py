@@ -3,6 +3,7 @@ import os
 os.environ.setdefault('PATH', '')
 from collections import deque
 import gym
+import numpy as np
 from gym import spaces
 import cv2
 cv2.ocl.setUseOpenCL(False)
