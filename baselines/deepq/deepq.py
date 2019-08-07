@@ -117,7 +117,6 @@ def learn(env,
           prioritized_replay_eps=1e-6,
           param_noise=False,
           multiplayer=False,
-          save_path=None,
           callback=None,
           load_path=None,
           load_path_1=None,
@@ -195,7 +194,6 @@ def learn(env,
     # This was all handled in not the most elegant way
     # Variables have a _1 or _2 appended to them to separate them
     # and a bunch of if statementss to have the _2 variables not do anything in single-player
-
 
     # when in multiplayer Space Invaders, need to not reward players for other player dying
     isSpaceInvaders = False
@@ -404,12 +402,11 @@ def learn(env,
             if isSpaceInvaders and multiplayer:
                 # don't reward a player when the other player dies
                 # change the reward to 0
-
                 # the only time either player will get rewarded 200 is when the other player dies
-                if rew_1 == 200:
-                    rew_1 = 0.0
-                if rew_2 == 200:
-                    rew_2 = 0.0
+                if rew_1 >= 200:
+                    rew_1 = rew_1 - 200.0
+                if rew_2 >= 200:
+                    rew_2 = rew_2 - 200.0
                 # manually clip the rewards using the sign function
                 rew_1 = np.sign(rew_1)
                 rew_2 = np.sign(rew_2)

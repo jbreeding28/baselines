@@ -92,7 +92,6 @@ def train(args, extra_args):
         total_timesteps=total_timesteps,
         print_freq=10,
         multiplayer=args.multiplayer,
-        save_path=args.save_path,
         **alg_kwargs
     )
 
@@ -267,6 +266,15 @@ def main(args):
     if args.play:
         logger.log("Running trained model")
         obs = env.reset()
+
+
+        action_path = osp.expanduser(args.log_path + "/actions.csv")
+        actions_1 = list()
+        actions_2 = list()
+        rewards_1 = list()
+        rewards_2 = list()
+        done_list = list()
+        lives_list = list()
         state_1 = model_1.initial_state if hasattr(model_1, 'initial_state') else None
         # copy what the first model is doing if there's multiple models
         if multiplayer:
@@ -301,11 +309,7 @@ def main(args):
         # due to the stacking of frames, only every fourth frame is displayed
         # and these games run at 60 fps
         # each fourth frame is rendered over the three missing frames
-        frame_time = float(4/60)
-        # Space Invaders stacks three frames instead of four
-        # this is due to flashing issues with the lasers
-        if "SpaceInvaders" in args.env:
-            frame_time = float(3/60)
+        frame_time = float(1/60)
         # get the render speed (default 3)
         render_speed = args.render_speed
         # constrain the speed to between 1x and 10x
@@ -346,7 +350,6 @@ def main(args):
                     action_2, _, _, _ = model_2.step(obs)
             # take a step forward in the environment, return new observation
             # return any reward and if the environment needs to be reset
-            
             # pass in both actions if there are two models
             # reward in this case is the default reward
             # in competitive multiplayer, this is Player 1's reward
@@ -360,13 +363,24 @@ def main(args):
             # this rewards a player when their opponent dies
             # remove this just to measure the score gained from destroying aliens
             if isSpaceInvaders and multiplayer:
-                if rew_1 == 200:
-                    rew_1 = 0
-                if rew_2 == 200:
-                    rew_2 = 0
+                if rew_1 >= 200:
+                    rew_1 = rew_1 - 200
+                if rew_2 >= 200:
+                    rew_2 = rew_2 - 200
             # get the number of lives remaining, which is relevant in certain games
             # in the multiplayer games I'll look at, the players should share a common life
+
+            #append actions, rewards, and done (converted to 0 or 1) to the lists
+            actions_1.append(action_1[0])
+            rewards_1.append(rew_1)
+            if multiplayer:
+                actions_2.append(action_2[0])
+                rewards_2.append(rew_2)
+            done_list.append(int(done == True))
+
             lives = env.getLives()
+            # append number of lives to the list
+            lives_list.append(lives)
             # add reward from previous step to overall score
             episode_rew_1 += rew_1[0] if isinstance(env, VecEnv) else rew_1
             episode_rew_2 += rew_2[0] if isinstance(env, VecEnv) else rew_2
@@ -449,13 +463,37 @@ def main(args):
                 # break out of this true loop
                 break
         # END MY CODE
+        
+        # create file to save actions to
+        # open it for writing
+        action_file = open(action_path,'w+')
+        with action_file as csv_scores:
+            # filewriter object
+            filewriter = csv.writer(csv_scores, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            # if it's multiplayer, write values for both players
+            if multiplayer:
+                # column headers
+                filewriter.writerow(['model1_actions', 'model1_rew', 'model2_actions', 'model2_rew', 'lives', 'done'])
+                for j in range(0,len(actions_1)):
+                    # iterate through arrays and write row by row
+                    filewriter.writerow([actions_1[j],rewards_1[j],actions_2[j],rewards_2[j],lives_list[j],done_list[j]])
+            else:
+                # column headers for single-player
+                filewriter.writerow(['model1_actions', 'model1_rew', 'lives', 'done'])
+                for j in range(0,len(actions_1)):
+                    # write row by row
+                    filewriter.writerow([actions_1[j],rewards_1[j],lives_list[j],done_list[j]])
+
     env.close()
 
     if args.build_state_library:
+        # based off of the library path I specify, specify file locations for the library and list of actions
         library_path = osp.expanduser(args.library_path + "/state_library")
         action_path = osp.expanduser(args.library_path + "/actions.csv")
+        # empty list
         state_library = list()
         logger.log("Building state library")
+        # initialize environment
         obs = env.reset()
         state_1 = model_1.initial_state if hasattr(model_1, 'initial_state') else None
         # copy what the first model is doing if there's multiple models
@@ -463,6 +501,7 @@ def main(args):
             state_2 = model_2.initial_state if hasattr(model_2, 'initial_state') else None
         dones = np.zeros((1,))
         isPong = False
+        # Pong needs to be handled differently
         if "Pong" in args.env:
             isPong = True
         model_1_actions = list()
@@ -519,9 +558,11 @@ def main(args):
         with action_file as csv_scores:
             filewriter = csv.writer(csv_scores, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
             if multiplayer:
+                filewriter.writerow(['model1_actions_groundtruth', 'model2_actions_groundtruth'])
                 for j in range(0,len(model_1_actions)):
                     filewriter.writerow([model_1_actions[j], model_2_actions[j]])
             else:
+                filewriter.writerow(['model1_actions_groundtruth'])
                 for j in range(0,len(model_1_actions)):
                     filewriter.writerow([model_1_actions[j]])
 
@@ -529,6 +570,7 @@ def main(args):
         dirname = os.path.dirname(image_path)
         if any(dirname):
             os.makedirs(dirname, exist_ok=True)
+        # convert each state to an image
         for i in range(1,len(state_library) + 1):
             image_path = osp.expanduser(args.library_path + "/state_images/state" + str(i) + ".jpg")
             img = state_library[i-1].state
@@ -561,8 +603,7 @@ def main(args):
     if args.evaluate_states:
         library_path = osp.expanduser(args.library_path + "/state_library")
         action_load_path = osp.expanduser(args.library_path + "/actions.csv")
-        action_ground_truth_path = osp.expanduser(args.eval_path + "/ground_truth_actions.csv")
-        action_test_path = osp.expanduser(args.eval_path + "/test_actions.csv")
+        action_test_path = osp.expanduser(args.eval_path + "/actions.csv")
         loaded_models_path = osp.expanduser(args.eval_path + "/loaded_models.txt")
         dirname = os.path.dirname(loaded_models_path)
         if any(dirname):
@@ -580,54 +621,76 @@ def main(args):
             model_2_actions = list()
         for i in range(1,len(state_library) + 1):
             # reconstruct the state
+
+            # get whole matrix
             img = state_library[i-1].state
+            # extract each layer
             frame1 = img[0:84,0:84,0]
             frame2 = img[0:84,0:84,1]
             frame3 = img[0:84,0:84,2]
+            # reshape each layer into the proper format
             frame1 = np.reshape(frame1, (84, 84, 1))
             frame2 = np.reshape(frame2, (84, 84, 1))
             frame3 = np.reshape(frame3, (84, 84, 1))
             if "SpaceInvaders" in args.env:
+                # concatenate
                 frames = [frame1, frame2, frame3]
             else:
+                # fourth frame only used for Pong, doesn't work for Space Invaders
                 frame4 = img[0:84,0:84,3]
                 frame4 = np.reshape(frame4, (84, 84, 1))
+                # concatenate
                 frames = [frame1, frame2, frame3, frame4]
+            # create the state by passing in the concatenated frames to the LazyFrames class
             obs = LazyFrames(frames)
+            # the observation can now be used with the models
+            # get actions and append them to my saved lists
             action_1, _, _, _ = model_1.step(obs)
             model_1_actions.append(action_1[0])
             if multiplayer:
                 action_2, _, _, _ = model_2.step(obs)
                 model_2_actions.append(action_2[0])
 
-        
+        # load the ground truth actions from the library
         action_load_file = open(action_load_path, 'r')
         reader = csv.reader(action_load_file)
-        ground_truth_action_file = open(action_ground_truth_path,'w+')
-        with ground_truth_action_file as csv_scores:
-            filewriter = csv.writer(csv_scores, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            for row in reader:
-                if len(row) == 1:
-                    filewriter.writerow([row[0]])
-                else:
-                    filewriter.writerow([row[0], row[1]])
-
-
+        # open new file for writing
         model_action_file = open(action_test_path,'w+')
         with model_action_file as csv_scores:
             filewriter = csv.writer(csv_scores, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            if multiplayer:
-                for j in range(0,len(model_1_actions)):
-                    filewriter.writerow([model_1_actions[j], model_2_actions[j]])
-            else:
-                for j in range(0,len(model_1_actions)):
-                    filewriter.writerow([model_1_actions[j]])
+            row_num = 0
+            # loop through rows in ground truth file
+            for row in reader:
+                if row_num == 0:
+                    # write headers if it's row 0
+                    if multiplayer:
+                        write_data = ['model1_actions', 'model2_actions']
+                    else:
+                        write_data = ['model1_actions']
+                else:
+                    # otherwise, get actions to write
+                    if multiplayer:
+                        write_data = [model_1_actions[row_num - 1], model_2_actions[row_num - 1]]
+                    else:
+                        write_data = [model_1_actions[row_num - 1]]
+                # write the row of the ground truth actions plus the taken actions from whatever models I'm testing and write the row
+                if len(row) == 1:
+                    filewriter.writerow([row[0]] + write_data)
+                else:
+                    filewriter.writerow([row[0], row[1]] + write_data)
+                row_num += 1
 
+
+        
+
+        # save the states as images
         image_path = osp.expanduser(args.eval_path + "/state_images/")
         dirname = os.path.dirname(image_path)
         if any(dirname):
             os.makedirs(dirname, exist_ok=True)
+        # for each state
         for i in range(1,len(state_library) + 1):
+            # reconstruct the state properly
             image_path = osp.expanduser(args.eval_path + "/state_images/state" + str(i) + ".jpg")
             img = state_library[i-1].state
             frame1 = img[0:84,0:84,0]
@@ -643,17 +706,22 @@ def main(args):
                 frame4 = np.reshape(frame4, (84, 84, 1))
                 frames = [frame1, frame2, frame3, frame4]
             frame = LazyFrames(frames)
+            # multiply different layers of the frame to visualize motion
             if "SpaceInvaders" in args.env:
                 img=np.round(0.25*frame._frames[0])+np.round(0.5*frame._frames[1])+np.round(frame._frames[2])
             else:
                 img=np.round(0.125*frame._frames[0])+np.round(0.25*frame._frames[1])+np.round(0.5*frame._frames[2])+np.round(frame._frames[3])
+            # convert to 8 bit unsigned integers
             img = img.astype(np.dtype('u1'))
+            # concatenate to get an "RGB" image
             img=np.concatenate((img, img, img),axis=2)
+            # upscale by a factor of 4
             height = np.shape(img)[0]
             width = np.shape(img)[1]
             size = 4
             # resize the screen and return it as the image
             img = cv2.resize(img, (width*size, height*size), interpolation=cv2.INTER_AREA)
+            # save the image
             matplotlib.image.imsave(image_path, img)
 
             
@@ -663,6 +731,7 @@ def main(args):
         sess_2.close()
     return model_1, model_2
 
+# small class to easily access state observations in the saved lists I create
 class StateWrapper(object):
     def __init__(self, obj):
         self.state = obj
